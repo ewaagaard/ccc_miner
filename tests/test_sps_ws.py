@@ -10,6 +10,8 @@ parquet_file = 'test_data/WS_2023.09.22.16.08.02.376100.parquet'
 # Instantiate class 
 ws = WS(parquet_file)
 
+#print(ws.get_beta_x_and_y_at_WS())
+
 ws.fit_Gaussian_To_Relevant_Profiles()
 
 """

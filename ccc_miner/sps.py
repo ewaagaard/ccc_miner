@@ -3,11 +3,18 @@ Process and plot extracted MD data from SPS, PS and LEIR, tailoried for each ind
 """
 import numpy as np
 import pandas as pd
+from pathlib import Path
 import matplotlib.pyplot as plt
 import matplotlib
 import pyarrow.parquet as pq
 from scipy.optimize import curve_fit
 from scipy.signal import savgol_filter
+
+import xtrack as xt
+
+# Calculate the absolute path to the data folder relative to the module's location
+test_data_folder = Path(__file__).resolve().parent.joinpath('../tests/test_data').absolute()
+test_seq_folder = Path(__file__).resolve().parent.joinpath('../tests/test_sequence').absolute()
 
 class SPS():
     """
@@ -25,6 +32,7 @@ class SPS():
         self.fBCT_device = fBCT_device
         self.WS_device_H = WS_device_H
         self.WS_device_V = WS_device_V
+        self.dpp = 1e-3
         
         # Plot settings
         self._nrows = 1
@@ -184,8 +192,19 @@ class WS(SPS):
             d = self.data_X
             #print(self.data_X['projDataSet1'][1])
             
-    def get_beta_x_and_y_at_WS(self):
-        """ Find betatronic functions at location of WS in Twiss table"""
+        def get_beta_x_and_y_at_WS(self):
+            """ Find betatronic functions at location of WS in Twiss table, also the horizontal dispersion"""
+            
+            line_SPS_Pb = xt.Line.from_json('{}/SPS_2021_Pb_ions_matched_with_RF.json'.format(test_seq_folder))
+            line_SPS_Pb.build_tracker()
+            twiss0_SPS = line_SPS_Pb.twiss().to_pandas()
+
+            # Find wire scanner location
+            betx = twiss0_SPS.betx[twiss0_SPS['name'] == 'bwsa.41420'].values[0]
+            bety = twiss0_SPS.bety[twiss0_SPS['name'] == 'bwsa.41420'].values[0]
+            dx = twiss0_SPS.dx[twiss0_SPS['name'] == 'bwsa.41420'].values[0]
+
+            return betx, bety, dx
 
 
         def getSingle_PM_ProfileData(self, data = None, ws_set='Set1', pmtSelection=None):  
@@ -224,20 +243,34 @@ class WS(SPS):
             
             return relevant_profile_positions, relevant_profiles, index
         
-        def fit_Gaussian_To_Relevant_Profiles(self, data = None): 
+        def fit_Gaussian_To_Relevant_Profiles(self, data = None, plane = 'X'): 
             """ Fit Gaussian to WS data"""
+            
             pos_all, prof_all, index = self.extract_Meaningful_Bunches_profiles(data)
             
             # Initiate figure
             figure, ax = self.createSubplots('BWS')  
             
-            #
+            # Collect beam parameter info
+            popts = np.zeros([len(prof_all), 4])
+            n_emittances = np.zeros(len(prof_all))
+            betx, bety, dx = self.get_beta_x_and_y_at_WS()
             
             # Fit Gaussian to relevant profiles
             for i, pos in enumerate(pos_all):
                 profile_data = prof_all[i]
                 popt = self.fit_Gaussian(pos, profile_data)
-        
+                popts[i, :] = popt
+                
+                # Calculate the emittance from beam paramters 
+                beta_func = betx if plane == 'X' else bety
+                sigma_raw = popts[i, 2] / 1e3 # in m
+                sigma_betatronic = np.sqrt((sigma_raw)**2 - (self.dpp * dx)**2)
+                emittance = sigma_betatronic**2 / beta_func 
+                nemittance = emittance * self.beta(self.gamma) * self.gamma 
+                n_emittances[i] = nemittance
+                print('\nBunch {}: Sigma = {:.3f} mm, n_emittance = {:.4f} um rad\n'.format(i+1, 1e3 * sigma_betatronic, 1e6 * nemittance))
+                
                 # Plot the data and the fitted curve
                 ax.plot(pos, profile_data, 'b-', label='Data index {}'.format(index[i]))
                 ax.plot(pos, self.Gaussian(pos, *popt), 'r-', label='Fit index {}'.format(index[i]))
