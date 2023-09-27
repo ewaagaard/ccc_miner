@@ -1,1 +1,3 @@
-from .ccc_miner import SPS
+from .sps import SPS
+from .sps import FBCT
+from .sps import WS
