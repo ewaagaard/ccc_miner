@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ccc_miner"
+description = "Package to mine data from MD campaigns in the CCC from SPS, PS and LEIR."
+version = "0.1.0"
+readme = "README.md"
+authors = [
+    { name = "Elias Waagaard", email = "elias.walter.waagaard@cern.ch" }
+]
+dependencies = [
+    "numpy",
+    "matplotlib",
+    "pandas",
+    "scipy",
+]
+
+[tool.setuptools]
+py-modules = ['ccc_miner']

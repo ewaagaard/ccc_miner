@@ -1,0 +1,1 @@
+from .ccc_miner import SPS
