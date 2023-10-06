@@ -2,7 +2,7 @@
 Process and plot extracted MD data from SPS, PS and LEIR, tailoried for each individual format
 """
 import numpy as np
-import pandas as pd
+import json
 from pathlib import Path
 import matplotlib.pyplot as plt
 import matplotlib
@@ -10,11 +10,9 @@ import pyarrow.parquet as pq
 from scipy.optimize import curve_fit
 from scipy.signal import savgol_filter
 
-import xtrack as xt
-
 # Calculate the absolute path to the data folder relative to the module's location
-test_data_folder = Path(__file__).resolve().parent.joinpath('../tests/test_data').absolute()
-test_seq_folder = Path(__file__).resolve().parent.joinpath('../tests/test_sequence').absolute()
+data_folder = Path(__file__).resolve().parent.joinpath('../data').absolute()
+seq_folder = Path(__file__).resolve().parent.joinpath('../data/sequence_files').absolute()
 
 class SPS():
     """
@@ -157,7 +155,7 @@ class WS(SPS):
         Parameters
             data : raw parquet file 
         """
-        def __init__(self, parquet_file, pmtSelection=2):
+        def __init__(self, parquet_file):  # do we need pmtSelection=2 ? 
             super().__init__()  # instantiate SPS class
             
             # Load data
@@ -168,20 +166,44 @@ class WS(SPS):
             beta = np.sqrt(1.0 - 1/gamma**2)
             return beta
             
+        def optics_at_WS(self):
+            """Reads betx, bety and dx from json file if exists """
+            try:
+                f = open('{}/SPS_WS_optics.json'.format(seq_folder))
+                optics_dict = json.load(f)
+                return optics_dict['betx'], optics_dict['bety'], optics_dict['dx'] 
+            except FileNotFoundError:
+                print('Optics file not found: need to run find_WS_optics module in data folder first!')
+        
         def load_X_Y_data(self, parquet_file):
             # Check beta function
             # Read data from both devices 
             data = pq.read_table(parquet_file).to_pydict()
             self.data_X = data[self.WS_device_H][0]['value']
             self.data_Y = data[self.WS_device_V][0]['value']
-            self.acqTime =  self.data_X['acqTime']
+            
+            # Check if different acquisition times in X and Y, otherwise pick X
+            try:
+                self.acqTime =  {'X': self.data_X['acqTime'], 'Y': self.data_Y['acqTime']}
+                exists_X_data, exists_Y_data = True, True 
+            except TypeError:
+                try:
+                    self.acqTime =  {'X': self.data_X['acqTime']}
+                    exists_X_data, exists_Y_data = True, False 
+                except TypeError:   
+                    self.acqTime =  {'Y': self.data_Y['acqTime']}
+                    exists_X_data, exists_Y_data = False, True
+            print(self.acqTime)
+            
             self.gamma_cycle = data['SPSBEAM/GAMMA'][0]['value']['JAPC_FUNCTION']  # IS THIS FOR PROTONS OR IONS?
 
             # Read processing parameters 
-            self.pmtSelection = self.data_X['pmtSelection']['JAPC_ENUM']['code'] # Selected photo-multiplier (PM)
-            self.nbAcqChannels = self.data_X['nbAcqChannels'] # number of Acq channels (usually 1)
-            self.delays = self.data_X['delays'][0] / 1e3 
-            self.nBunches = len(self.data_X['bunchSelection'])
+            data = self.data_X if exists_X_data else self.data_Y
+            
+            self.pmtSelection = data['pmtSelection']['JAPC_ENUM']['code'] # Selected photo-multiplier (PM)
+            self.nbAcqChannels = data['nbAcqChannels'] # number of Acq channels (usually 1)
+            self.delays = data['delays'][0] / 1e3 
+            self.nBunches = len(data['bunchSelection'])
             
             # Find relativistic gamma - remove all gamma cycle data points where Y is possibly zero
             gamma_raw_Y = np.array(self.gamma_cycle['Y'], dtype=np.float64)
@@ -189,33 +211,17 @@ class WS(SPS):
             gamma_cycle_X = np.array(self.gamma_cycle['X'])[np.isnan(gamma_raw_Y) == 0.]                         
             self.gamma = np.interp(self.delays, gamma_cycle_X, gamma_cycle_Y)  # find gamma at correct delay
             
-            
-            d = self.data_X
-            #print(self.data_X['projDataSet1'][1])
-            
-        def get_beta_x_and_y_at_WS(self):
-            """ Find betatronic functions at location of WS in Twiss table, also the horizontal dispersion"""
-            
-            line_SPS_Pb = xt.Line.from_json('{}/SPS_2021_Pb_ions_matched_with_RF.json'.format(test_seq_folder))
-            line_SPS_Pb.build_tracker()
-            twiss0_SPS = line_SPS_Pb.twiss().to_pandas()
 
-            # Find wire scanner location
-            betx = twiss0_SPS.betx[twiss0_SPS['name'] == 'bwsrc.41677'].values[0]
-            bety = twiss0_SPS.bety[twiss0_SPS['name'] == 'bwsrc.41678'].values[0]
-            dx = twiss0_SPS.dx[twiss0_SPS['name'] == 'bwsrc.41677'].values[0]
-
-            return betx, bety, dx
-
-
-        def getSingle_PM_ProfileData(self, data, ws_set='Set2', pmtSelection=None):  
+        def getSingle_PM_ProfileData(self, data, ws_set='Set1', pmtSelection=None):  
             """ Extract Wire Scanner profile data - from chosen single photo-multipliers (PM) 
-            
+                
+                Default is INSCAN (Set1) but also OUTSCAN (Set2) can be used
+                
                 Setting bunch selectors e.g. 1-20; 920-924 means that all bunches are included,
                 so in this case 41 bunches - but not all bunches are the actual meaningful bunches
              """
             if data is None:
-                data = self.data_X # default unless provided 
+                raise ValueError('Have to provide input data!')
             
             # Extract relevant data
             profile_position_all_bunches = np.array(data['projPosition' + ws_set])
@@ -224,15 +230,15 @@ class WS(SPS):
             return profile_position_all_bunches, profile_data_all_bunches
             
         
-        def extract_Meaningful_Bunches_profiles(self, data = None, 
-                                                ws_set='Set2',
-                                                no_bunches=4, 
-                                                amplitude_threshhold = 2000
+        def extract_Meaningful_Bunches_profiles(self, data, 
+                                                ws_set='Set1',
+                                                no_bunches=40, 
+                                                amplitude_threshhold = 1200  # to avoid noise readouts
                                                 ):
             """ Get all WS profiles and positions from chosen PM, only focus on the meaningful ones"""
             
             # Extract the single-PM chosen bunches
-            profile_position_all_bunches, profile_data_all_bunches = self.getSingle_PM_ProfileData(data)
+            profile_position_all_bunches, profile_data_all_bunches = self.getSingle_PM_ProfileData(data, ws_set)
             
             # Select profiles whose amplitude reading are above the threshoold
             relevant_profiles, relevant_profile_positions, index = [], [], []
@@ -241,6 +247,8 @@ class WS(SPS):
                      relevant_profiles.append(profile)
                      relevant_profile_positions.append(profile_position_all_bunches[i])
                      index.append(i)
+            if not relevant_profiles:
+                print('\n\n NO RELEVANT PROFILES ABOVE NOISE THRESHOLD EXTRACTED!\n\n')
             
             # Alert if there is disagreement
             if no_bunches != len(relevant_profiles):
@@ -248,19 +256,31 @@ class WS(SPS):
             
             return relevant_profile_positions, relevant_profiles, index
         
-        def fit_Gaussian_To_Relevant_Profiles(self, data = None, plane = 'X', ws_set='Set1'): 
-            """ Fit Gaussian to WS data"""
+        
+        def fit_Gaussian_To_and_Plot_Relevant_Profiles(self, 
+                                                       plane = 'X', 
+                                                       ws_set='Set1', 
+                                                       figname=None
+                                                       ): 
+            """ Fit Gaussian to WS data
+                Parameters: plane ('X' or 'Y') and which scan: 'Set1' (INSCAN) or 'Set2' (OUTSCAN)
+            """
             
+            # Read data
+            data = self.data_X if plane=='X' else self.data_Y
             pos_all, prof_all, index = self.extract_Meaningful_Bunches_profiles(data, ws_set)
             
             # Initiate figure
-            figure, ax = self.createSubplots('BWS')  
+            if figname is None:
+                figname = 'BWS {}'.format(plane)
+            figure, ax = self.createSubplots(figname)  
             
             # Collect beam parameter info
             popts = np.zeros([len(prof_all), 4])
-            n_emittances = np.zeros(len(prof_all))
-            betx, bety, dx = self.get_beta_x_and_y_at_WS()
+            n_emittances, sigmas_raw = np.zeros(len(prof_all)), np.zeros(len(prof_all))
+            betx, bety, dx = self.optics_at_WS()
             
+            print('\nUTC TIMESTAMP: {}'.format(self.acqTime[plane]))
             print('\nFitting Gaussians, for beam gamma = {:.4f}\n'.format(self.gamma))
                         
             # Fit Gaussian to relevant profiles
@@ -275,13 +295,7 @@ class WS(SPS):
                 sigma_betatronic = np.sqrt((sigma_raw)**2 - (self.dpp * dx)**2)
                 emittance = sigma_betatronic**2 / beta_func 
                 nemittance = emittance * self.beta(self.gamma) * self.gamma 
-                """
-                print('sigma raw: {}'.format(sigma_raw))
-                print('sigma betatronic: {}'.format(sigma_betatronic))
-                print('beta func: {}'.format(beta_func))
-                print('emittance: {}'.format(emittance))
-                print('nemittance: {}'.format(nemittance))
-                """
+                sigmas_raw[i] = sigma_raw
                 n_emittances[i] = nemittance
                 print('Bunch {}: Sigma = {:.3f} mm, n_emittance = {:.4f} um rad\n'.format(i+1, 1e3 * sigma_betatronic, 1e6 * nemittance))
                 
@@ -291,16 +305,16 @@ class WS(SPS):
             
             en_bar = np.mean(n_emittances)
             spread = np.std(n_emittances)
-            ax.text(0.04, 0.12, ws_set, fontsize=10, transform=ax.transAxes)
-            ax.text(0.04, 0.92, 'Time: {}'.format(self.acqTime), fontsize=10, transform=ax.transAxes)
-            ax.text(0.04, 0.8, 'Plane {}: \nn_ex = {:.3f} +/- {:.3f} um'.format(plane, 1e6 * en_bar, 1e6 * spread), fontsize=10, transform=ax.transAxes)
+            ax.text(0.89, 0.89, plane, fontsize=35, fontweight='bold', transform=ax.transAxes)
+            ax.text(0.02, 0.12, '{}: {} profiles'.format(ws_set, len(pos_all)), fontsize=13, transform=ax.transAxes)
+            ax.text(0.02, 0.92, 'UTC timestamp:\n {}'.format(self.acqTime[plane]), fontsize=10, transform=ax.transAxes)
+            ax.text(0.02, 0.8, 'Plane {} average: \n$\epsilon^n$ = {:.3f} +/- {:.3f} $\mu$m rad'.format(plane, 1e6 * en_bar, 1e6 * spread), fontsize=12, transform=ax.transAxes)
 
             ax.set_xlabel('Position (mm)')
             ax.set_ylabel('Amplitude (a.u.)')    
             
-            return figure
-            #plt.show()
-                        
+            return figure, n_emittances, sigmas_raw
+
     
             
         # Hannes old version below, not needed for now

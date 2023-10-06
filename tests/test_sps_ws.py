@@ -5,26 +5,18 @@ import matplotlib.pyplot as plt
 from ccc_miner import WS
 
 # Load data into fBCT
-parquet_file = 'test_data/WS_2023.09.22.16.08.02.376100.parquet'
+parquet_file = '../data/test_data/WS_2023.09.22.16.08.02.376100.parquet'
+
+# Test data corresponds to this logbook entry:
+# https://logbook.cern.ch/elogbook-server/GET/showEventInLogbook/3835189
 
 # Instantiate class 
 ws = WS(parquet_file)
 
-#print(ws.get_beta_x_and_y_at_WS())
-
-fig = ws.fit_Gaussian_To_Relevant_Profiles()  # seems like the wrong beta func?
-fig.savefig('Test_plot.png', dpi=250)
-
-"""
-pos_all, prof_all, index = ws.extract_Meaningful_Bunches_profiles()
-print(index)
-
-# Plot the positions and profile
-fig = plt.figure(figsize=(10,7))
-ax = fig.add_subplot(1,1,1)
-for i, pos in enumerate(pos_all):
-    ax.plot(pos, prof_all[i], marker='*', markersize=5, linestyle=None) 
-ax.set_xlabel('Position (mm)')
-ax.set_ylabel('Amplitude (a.u.)')    
+# First test 
+figure_X, n_emittances_X, sigmas_raw_X = ws.fit_Gaussian_To_and_Plot_Relevant_Profiles() 
+figure_Y, n_emittances_Y, sigmas_raw_Y = ws.fit_Gaussian_To_and_Plot_Relevant_Profiles(plane='Y') 
 plt.show()
-#"""
+
+
+#fig.savefig('Test_plot.png', dpi=250)
