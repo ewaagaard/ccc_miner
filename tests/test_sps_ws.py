@@ -12,7 +12,8 @@ ws = WS(parquet_file)
 
 #print(ws.get_beta_x_and_y_at_WS())
 
-ws.fit_Gaussian_To_Relevant_Profiles()
+fig = ws.fit_Gaussian_To_Relevant_Profiles()  # seems like the wrong beta func?
+fig.savefig('Test_plot.png', dpi=250)
 
 """
 pos_all, prof_all, index = ws.extract_Meaningful_Bunches_profiles()

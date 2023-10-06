@@ -121,7 +121,7 @@ class FBCT(SPS):
 
             # Generate color map of bunch intensity over 25-ns bucket and cycle time
             im = axs[0].pcolormesh(range(self.n_slots), 1e-3*self.measStamp, 
-                    self.bunchIntensity * self.unit, cmap=self.cmap, shading='nearest')
+                    self.bunchIntensity * self.unit, cmap=self.cmap, shading='nearest')  # , vmax=0.2e10 to change intensity scale
             cb1 = plt.colorbar(im,ax=axs[0])
             cb1.set_label('Intensity')
             cmap = matplotlib.cm.get_cmap(self.cmap)
@@ -174,6 +174,7 @@ class WS(SPS):
             data = pq.read_table(parquet_file).to_pydict()
             self.data_X = data[self.WS_device_H][0]['value']
             self.data_Y = data[self.WS_device_V][0]['value']
+            self.acqTime =  self.data_X['acqTime']
             self.gamma_cycle = data['SPSBEAM/GAMMA'][0]['value']['JAPC_FUNCTION']  # IS THIS FOR PROTONS OR IONS?
 
             # Read processing parameters 
@@ -200,14 +201,14 @@ class WS(SPS):
             twiss0_SPS = line_SPS_Pb.twiss().to_pandas()
 
             # Find wire scanner location
-            betx = twiss0_SPS.betx[twiss0_SPS['name'] == 'bwsa.41420'].values[0]
-            bety = twiss0_SPS.bety[twiss0_SPS['name'] == 'bwsa.41420'].values[0]
-            dx = twiss0_SPS.dx[twiss0_SPS['name'] == 'bwsa.41420'].values[0]
+            betx = twiss0_SPS.betx[twiss0_SPS['name'] == 'bwsrc.41677'].values[0]
+            bety = twiss0_SPS.bety[twiss0_SPS['name'] == 'bwsrc.41678'].values[0]
+            dx = twiss0_SPS.dx[twiss0_SPS['name'] == 'bwsrc.41677'].values[0]
 
             return betx, bety, dx
 
 
-        def getSingle_PM_ProfileData(self, data = None, ws_set='Set1', pmtSelection=None):  
+        def getSingle_PM_ProfileData(self, data, ws_set='Set2', pmtSelection=None):  
             """ Extract Wire Scanner profile data - from chosen single photo-multipliers (PM) 
             
                 Setting bunch selectors e.g. 1-20; 920-924 means that all bunches are included,
@@ -223,7 +224,11 @@ class WS(SPS):
             return profile_position_all_bunches, profile_data_all_bunches
             
         
-        def extract_Meaningful_Bunches_profiles(self, data = None, no_bunches=4, amplitude_threshhold = 2000):
+        def extract_Meaningful_Bunches_profiles(self, data = None, 
+                                                ws_set='Set2',
+                                                no_bunches=4, 
+                                                amplitude_threshhold = 2000
+                                                ):
             """ Get all WS profiles and positions from chosen PM, only focus on the meaningful ones"""
             
             # Extract the single-PM chosen bunches
@@ -243,10 +248,10 @@ class WS(SPS):
             
             return relevant_profile_positions, relevant_profiles, index
         
-        def fit_Gaussian_To_Relevant_Profiles(self, data = None, plane = 'X'): 
+        def fit_Gaussian_To_Relevant_Profiles(self, data = None, plane = 'X', ws_set='Set1'): 
             """ Fit Gaussian to WS data"""
             
-            pos_all, prof_all, index = self.extract_Meaningful_Bunches_profiles(data)
+            pos_all, prof_all, index = self.extract_Meaningful_Bunches_profiles(data, ws_set)
             
             # Initiate figure
             figure, ax = self.createSubplots('BWS')  
@@ -256,6 +261,8 @@ class WS(SPS):
             n_emittances = np.zeros(len(prof_all))
             betx, bety, dx = self.get_beta_x_and_y_at_WS()
             
+            print('\nFitting Gaussians, for beam gamma = {:.4f}\n'.format(self.gamma))
+                        
             # Fit Gaussian to relevant profiles
             for i, pos in enumerate(pos_all):
                 profile_data = prof_all[i]
@@ -268,16 +275,31 @@ class WS(SPS):
                 sigma_betatronic = np.sqrt((sigma_raw)**2 - (self.dpp * dx)**2)
                 emittance = sigma_betatronic**2 / beta_func 
                 nemittance = emittance * self.beta(self.gamma) * self.gamma 
+                """
+                print('sigma raw: {}'.format(sigma_raw))
+                print('sigma betatronic: {}'.format(sigma_betatronic))
+                print('beta func: {}'.format(beta_func))
+                print('emittance: {}'.format(emittance))
+                print('nemittance: {}'.format(nemittance))
+                """
                 n_emittances[i] = nemittance
-                print('\nBunch {}: Sigma = {:.3f} mm, n_emittance = {:.4f} um rad\n'.format(i+1, 1e3 * sigma_betatronic, 1e6 * nemittance))
+                print('Bunch {}: Sigma = {:.3f} mm, n_emittance = {:.4f} um rad\n'.format(i+1, 1e3 * sigma_betatronic, 1e6 * nemittance))
                 
                 # Plot the data and the fitted curve
                 ax.plot(pos, profile_data, 'b-', label='Data index {}'.format(index[i]))
                 ax.plot(pos, self.Gaussian(pos, *popt), 'r-', label='Fit index {}'.format(index[i]))
             
+            en_bar = np.mean(n_emittances)
+            spread = np.std(n_emittances)
+            ax.text(0.04, 0.12, ws_set, fontsize=10, transform=ax.transAxes)
+            ax.text(0.04, 0.92, 'Time: {}'.format(self.acqTime), fontsize=10, transform=ax.transAxes)
+            ax.text(0.04, 0.8, 'Plane {}: \nn_ex = {:.3f} +/- {:.3f} um'.format(plane, 1e6 * en_bar, 1e6 * spread), fontsize=10, transform=ax.transAxes)
+
             ax.set_xlabel('Position (mm)')
             ax.set_ylabel('Amplitude (a.u.)')    
-            plt.show()
+            
+            return figure
+            #plt.show()
                         
     
             
