@@ -1,0 +1,57 @@
+asttokens @ file:///opt/conda/conda-bld/asttokens_1646925590279/work
+backcall @ file:///home/ktietz/src/ci/backcall_1611930011877/work
+Bottleneck @ file:///work/ci_py311/bottleneck_1676827011612/work
+-e git+ssh://git@github.com/ewaagaard/ccc_miner.git@0bbb62a3df38d56f4af2298cbd88b3a75ae3e849#egg=ccc_miner
+cffi==1.15.1
+contourpy @ file:///work/ci_py311/contourpy_1676827066340/work
+cycler @ file:///tmp/build/80754af9/cycler_1637851556182/work
+decorator @ file:///opt/conda/conda-bld/decorator_1643638310831/work
+executing @ file:///opt/conda/conda-bld/executing_1646925071911/work
+fonttools==4.25.0
+ipython @ file:///croot/ipython_1694181358621/work
+jedi @ file:///work/ci_py311_2/jedi_1679336495545/work
+kiwisolver @ file:///work/ci_py311/kiwisolver_1676827230232/work
+lark==1.1.7
+matplotlib @ file:///croot/matplotlib-suite_1693812469450/work
+matplotlib-inline @ file:///work/ci_py311/matplotlib-inline_1676823841154/work
+mkl-fft @ file:///croot/mkl_fft_1695058164594/work
+mkl-random @ file:///croot/mkl_random_1695059800811/work
+mkl-service==2.4.0
+mpmath==1.3.0
+munkres==1.1.4
+numexpr @ file:///croot/numexpr_1683221822650/work
+numpy @ file:///croot/numpy_and_numpy_base_1691091611330/work
+packaging @ file:///croot/packaging_1693575174725/work
+pandas @ file:///croot/pandas_1692289311655/work
+parso @ file:///opt/conda/conda-bld/parso_1641458642106/work
+pexpect @ file:///tmp/build/80754af9/pexpect_1605563209008/work
+pickleshare @ file:///tmp/build/80754af9/pickleshare_1606932040724/work
+Pillow @ file:///croot/pillow_1695134008276/work
+ply==3.11
+prompt-toolkit @ file:///work/ci_py311/prompt-toolkit_1676824857154/work
+ptyprocess @ file:///tmp/build/80754af9/ptyprocess_1609355006118/work/dist/ptyprocess-0.7.0-py2.py3-none-any.whl
+pure-eval @ file:///opt/conda/conda-bld/pure_eval_1646925070566/work
+pyarrow==13.0.0
+pycparser==2.21
+Pygments @ file:///croot/pygments_1684279966437/work
+pyparsing @ file:///work/ci_py311/pyparsing_1677811559502/work
+PyQt5-sip==12.11.0
+-e git+ssh://git@github.com/sailew/PySCRDT.git@ed592222bae6a2512c1df87841677c0166a81ca6#egg=PySCRDT
+python-dateutil @ file:///tmp/build/80754af9/python-dateutil_1626374649649/work
+pytz @ file:///croot/pytz_1695131579487/work
+scipy @ file:///croot/scipy_1691606680890/work/dist/scipy-1.11.1-cp311-cp311-linux_x86_64.whl#sha256=ba491c7d30a02bb93027e90b0aa58c0fe8d1e0fc3ddfe3469178740bd150aa45
+sip @ file:///work/ci_py311/sip_1676825117084/work
+six @ file:///tmp/build/80754af9/six_1644875935023/work
+stack-data @ file:///opt/conda/conda-bld/stack_data_1646927590127/work
+sympy==1.12
+toml @ file:///tmp/build/80754af9/toml_1616166611790/work
+tornado @ file:///croot/tornado_1690848263220/work
+traitlets @ file:///work/ci_py311/traitlets_1676823305040/work
+tzdata @ file:///croot/python-tzdata_1690578112552/work
+wcwidth @ file:///Users/ktietz/demo/mc3/conda-bld/wcwidth_1629357192024/work
+xdeps==0.4.2
+xfields==0.13.1
+xobjects==0.2.8
+xpart==0.15.3
+xsuite==0.5.0
+xtrack==0.42.0

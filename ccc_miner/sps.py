@@ -9,6 +9,7 @@ import matplotlib
 import pyarrow.parquet as pq
 from scipy.optimize import curve_fit
 from scipy.signal import savgol_filter
+import pandas as pd
 
 # Calculate the absolute path to the data folder relative to the module's location
 data_folder = Path(__file__).resolve().parent.joinpath('../data').absolute()
@@ -190,9 +191,15 @@ class WS(SPS):
                 try:
                     self.acqTime =  {'X': self.data_X['acqTime']}
                     exists_X_data, exists_Y_data = True, False 
-                except TypeError:   
-                    self.acqTime =  {'Y': self.data_Y['acqTime']}
-                    exists_X_data, exists_Y_data = False, True
+                except TypeError:
+                    try:
+                        self.acqTime =  {'Y': self.data_Y['acqTime']}
+                        exists_X_data, exists_Y_data = False, True
+                    except TypeError:
+                        exists_X_data, exists_Y_data = False, False
+                        print('\nDATA DOES NOT EXIST IN NEITHER PLANE!\n')
+                        return
+                    
             print(self.acqTime)
             
             self.gamma_cycle = data['SPSBEAM/GAMMA'][0]['value']['JAPC_FUNCTION']  # IS THIS FOR PROTONS OR IONS?
@@ -203,7 +210,7 @@ class WS(SPS):
             self.pmtSelection = data['pmtSelection']['JAPC_ENUM']['code'] # Selected photo-multiplier (PM)
             self.nbAcqChannels = data['nbAcqChannels'] # number of Acq channels (usually 1)
             self.delays = data['delays'][0] / 1e3 
-            self.nBunches = len(data['bunchSelection'])
+            self.nBunches = len(data['bunchSelection'])     
             
             # Find relativistic gamma - remove all gamma cycle data points where Y is possibly zero
             gamma_raw_Y = np.array(self.gamma_cycle['Y'], dtype=np.float64)
@@ -250,9 +257,9 @@ class WS(SPS):
             if not relevant_profiles:
                 print('\n\n NO RELEVANT PROFILES ABOVE NOISE THRESHOLD EXTRACTED!\n\n')
             
-            # Alert if there is disagreement
-            if no_bunches != len(relevant_profiles):
-                print('\nWarning, number of relevant bunches do not seem to match the desired number {}!\n'.format(no_bunches))
+            # Alert if there is disagreement - NOT NEEDED!
+            #if no_bunches != len(relevant_profiles):
+            #    print('\nWarning, number of relevant bunches do not seem to match the desired number {}!\n'.format(no_bunches))
             
             return relevant_profile_positions, relevant_profiles, index
         
@@ -286,6 +293,12 @@ class WS(SPS):
             # Fit Gaussian to relevant profiles
             for i, pos in enumerate(pos_all):
                 profile_data = prof_all[i]
+                
+                # Check such that the profile data is not mismatching the position data
+                if self.pmtSelection == 5:  # "PM_ALL" --> all photomultipliers selected 
+                    print('\nALL PHOTOMULTIPLIERS SELECTED - BETTER ONLY WITH ONE!\n')
+                    return
+
                 popt = self.fit_Gaussian(pos, profile_data)
                 popts[i, :] = popt
                 
@@ -301,6 +314,7 @@ class WS(SPS):
                 
                 # Plot the data and the fitted curve
                 ax.plot(pos, profile_data, 'b-', label='Data index {}'.format(index[i]))
+                ax.set_xlim(-30, 30)
                 ax.plot(pos, self.Gaussian(pos, *popt), 'r-', label='Fit index {}'.format(index[i]))
             
             en_bar = np.mean(n_emittances)
@@ -313,7 +327,7 @@ class WS(SPS):
             ax.set_xlabel('Position (mm)')
             ax.set_ylabel('Amplitude (a.u.)')    
             
-            return figure, n_emittances, sigmas_raw
+            return figure, n_emittances, sigmas_raw, self.acqTime[plane]
 
     
             
