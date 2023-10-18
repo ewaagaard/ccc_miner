@@ -200,8 +200,6 @@ class WS(SPS):
                         print('\nDATA DOES NOT EXIST IN NEITHER PLANE!\n')
                         return
                     
-            print(self.acqTime)
-            
             self.gamma_cycle = data['SPSBEAM/GAMMA'][0]['value']['JAPC_FUNCTION']  # IS THIS FOR PROTONS OR IONS?
 
             # Read processing parameters 
@@ -211,6 +209,8 @@ class WS(SPS):
             self.nbAcqChannels = data['nbAcqChannels'] # number of Acq channels (usually 1)
             self.delays = data['delays'][0] / 1e3 
             self.nBunches = len(data['bunchSelection'])     
+            self.acqTimeinCycleX_inScan = self.data_X['acqTimeInCycleSet1'] if exists_X_data else np.nan
+            self.acqTimeinCycleY_inScan = self.data_Y['acqTimeInCycleSet1'] if exists_Y_data else np.nan
             
             # Find relativistic gamma - remove all gamma cycle data points where Y is possibly zero
             gamma_raw_Y = np.array(self.gamma_cycle['Y'], dtype=np.float64)
@@ -255,24 +255,23 @@ class WS(SPS):
                      relevant_profile_positions.append(profile_position_all_bunches[i])
                      index.append(i)
             if not relevant_profiles:
-                print('\n\n NO RELEVANT PROFILES ABOVE NOISE THRESHOLD EXTRACTED!\n\n')
-            
-            # Alert if there is disagreement - NOT NEEDED!
-            #if no_bunches != len(relevant_profiles):
-            #    print('\nWarning, number of relevant bunches do not seem to match the desired number {}!\n'.format(no_bunches))
+                print('\n\nNO RELEVANT PROFILES ABOVE NOISE THRESHOLD EXTRACTED!\n\n')
             
             return relevant_profile_positions, relevant_profiles, index
         
         
         def fit_Gaussian_To_and_Plot_Relevant_Profiles(self, 
                                                        plane = 'X', 
-                                                       ws_set='Set1', 
+                                                       ws_set='Set1',
+                                                       no_profiles=0,
                                                        figname=None
                                                        ): 
             """ Fit Gaussian to WS data
-                Parameters: plane ('X' or 'Y') and which scan: 'Set1' (INSCAN) or 'Set2' (OUTSCAN)
+                Parameters: 
+                    plane ('X' or 'Y')
+                    which scan: 'Set1' (INSCAN) or 'Set2' (OUTSCAN)
+                    no_profiles: how many bunch profiles to include (first X nr of bunches) - default all (0)
             """
-            
             # Read data
             data = self.data_X if plane=='X' else self.data_Y
             pos_all, prof_all, index = self.extract_Meaningful_Bunches_profiles(data, ws_set)
@@ -283,15 +282,28 @@ class WS(SPS):
             figure, ax = self.createSubplots(figname)  
             
             # Collect beam parameter info
-            popts = np.zeros([len(prof_all), 4])
-            n_emittances, sigmas_raw = np.zeros(len(prof_all)), np.zeros(len(prof_all))
             betx, bety, dx = self.optics_at_WS()
             
             print('\nUTC TIMESTAMP: {}'.format(self.acqTime[plane]))
             print('\nFitting Gaussians, for beam gamma = {:.4f}\n'.format(self.gamma))
                         
-            # Fit Gaussian to relevant profiles
-            for i, pos in enumerate(pos_all):
+            # Fit Gaussian to relevant profiles - either scan through all or up to given number
+            if no_profiles != 0 and prof_all: 
+                no_bunches = no_profiles  # custom number of profiles
+            elif no_profiles == 0 and prof_all:
+                no_bunches =  len(pos_all)  # not selected number of bunches - select all relevant
+            else:
+                print('No relevant profiles, not fitting Gaussian!\n')    
+                return
+            
+            # Initialize empty arrays
+            popts = np.zeros([no_bunches, 4])
+            n_emittances, sigmas_raw = np.zeros(no_bunches), np.zeros(no_bunches)
+            
+            print('Scanning {} FIRST BUNCHES\n'.format(no_bunches))
+            for i in range(no_bunches):
+           
+                pos = pos_all[i]
                 profile_data = prof_all[i]
                 
                 # Check such that the profile data is not mismatching the position data
@@ -304,6 +316,7 @@ class WS(SPS):
                 
                 # Calculate the emittance from beam paramters 
                 beta_func = betx if plane == 'X' else bety
+                ctime_s = self.acqTimeinCycleX_inScan/1e3 if plane == 'X' else self.acqTimeinCycleY_inScan/1e3
                 sigma_raw = popts[i, 2] / 1e3 # in m
                 sigma_betatronic = np.sqrt((sigma_raw)**2 - (self.dpp * dx)**2)
                 emittance = sigma_betatronic**2 / beta_func 
@@ -320,49 +333,14 @@ class WS(SPS):
             en_bar = np.mean(n_emittances)
             spread = np.std(n_emittances)
             ax.text(0.89, 0.89, plane, fontsize=35, fontweight='bold', transform=ax.transAxes)
-            ax.text(0.02, 0.12, '{}: {} profiles'.format(ws_set, len(pos_all)), fontsize=13, transform=ax.transAxes)
+            ax.text(0.02, 0.12, '{}: {} profiles'.format(ws_set, no_bunches), fontsize=13, transform=ax.transAxes)
             ax.text(0.02, 0.92, 'UTC timestamp:\n {}'.format(self.acqTime[plane]), fontsize=10, transform=ax.transAxes)
-            ax.text(0.02, 0.8, 'Plane {} average: \n$\epsilon^n$ = {:.3f} +/- {:.3f} $\mu$m rad'.format(plane, 1e6 * en_bar, 1e6 * spread), fontsize=12, transform=ax.transAxes)
+            ax.text(0.02, 0.8, 'Plane {} average: \n$\epsilon^n$ = {:.3f} +/- {:.3f} $\mu$m rad'.format(plane, 1e6 * en_bar, 1e6 * spread), fontsize=14, transform=ax.transAxes)
+            ax.text(0.78, 0.14, 'InScan {}:\nctime = {:.2f} s'.format(plane, ctime_s),
+                                                                            fontsize=11,transform=ax.transAxes)
 
             ax.set_xlabel('Position (mm)')
             ax.set_ylabel('Amplitude (a.u.)')    
             
-            return figure, n_emittances, sigmas_raw, self.acqTime[plane]
-
-    
-            
-        # Hannes old version below, not needed for now
-        '''
-        def get_all_PM_ProfileData(self, ws_set='Set1'):  
-            """ Extract Wire Scanner profile data - from all photo-multipliers (PM) 
-                if index is set, or 'ALL' (5) or 'AUTO' (0) if those settings were used 
-             """
-            d = self.data_Xdata = None
-            nbAcqChannelsmax = 4            
-            nbPts = d['nbPtsPerProjIn%s'%ws_set]
-            prof_all_raw = [d['projData%s'%ws_set][i][:] for i in range(self.nBunches)]  # for pandas had to edit index here, with datascout it was [i, :]
-            prof_all_tmp = []
-            for prof in prof_all_raw:
-                prof_all_tmp.append([prof[i*nbPts:(i+1)*nbPts] for i in range(self.nbAcqChannels)])
-            prof_all_tmp = np.array(prof_all_tmp)
-            pos_all = np.array([d['projPosition%s'%ws_set][i] for i in range(self.nBunches)])#.T
-            prof_all = []
-           
-            # Iterate over all PM profiles, also if several PMs used 
-            if self.pmtSelection == 5: # Setting 'PM_ALL', i.e. collecting data from all PMs
-                for nAcq in range(nbAcqChannelsmax):
-                    prof_all.append(prof_all_tmp[:,nAcq,:])#.T)
-            else:
-                if self.pmtSelection == 0: # Setting 'PM_AUTO' in WS, i.e. choosing the best photo-multiplier
-                    prof_indx = [d['bestChannel%s'%ws_set]-1]
-                else:
-                    prof_indx = [self.pmtSelection-1]
-                for nAcq in range(nbAcqChannelsmax):
-                    # Return nan arrays if not chosen PM
-                    if nAcq in prof_indx:
-                        prof_all.append(prof_all_tmp[:,0,:])
-                    else:
-                        prof_all.append(np.array([[np.nan]*nbPts]*self.nBunches))
-            
-            return pos_all, prof_all
-            '''
+            return figure, n_emittances, sigmas_raw, self.acqTime[plane], ctime_s
+     
