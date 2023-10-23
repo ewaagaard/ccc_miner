@@ -13,3 +13,7 @@ parquet_file = '{}/test_data/FBCT_2023.09.22.16.07.26.612797.parquet'.format(dat
 # Instantiate class 
 fbct = FBCT(parquet_file)
 fbct.plot()
+
+# Also plot bunch-by-bunch data
+fig = fbct.plot_selected_bunches([0, 1, 2, 3])
+fig.show()

@@ -87,11 +87,12 @@ class SPS():
 class FBCT(SPS):
         """
         The fast BCT registers bunch-by-bunch intensity - can extract every single bunch
+        Default min threshold to consider a slot a successful bunch 
         
         Parameters
             data : raw parquet file 
         """
-        def __init__(self, parquet_file):
+        def __init__(self, parquet_file, min_intensity = 150):
             super().__init__()  # instantiate SPS class
             
             # Load data 
@@ -108,6 +109,16 @@ class FBCT(SPS):
             self.nbOfMeas = self.d['nbOfMeas']
             self.acqTime =  self.d['acqTime']
             self.beamDetected =self.d['beamDetected']
+            
+            # Extract filling index for bunches
+            slip_stacking_ind = self.measStamp < 50e3 # point after which slip stacking happens
+            
+            # DEFAULT FILLING SCHEME - 7 injections
+            # Not always 7 injections, but always 4 bunches per batch
+            # In every batch of four bunches, three empty slots. Between every batch, four empty slots 
+            # Check the min intensity criteria before slip stacking 
+            self.bunch_index = np.where(np.any(self.bunchIntensity[slip_stacking_ind, :] > min_intensity, axis=0))[0]
+            
             
         def load_data(self, parquet_file):
             """Load FBCT parquet data file"""
@@ -144,9 +155,43 @@ class FBCT(SPS):
             self.axs[0].set_ylabel('Cycle time (s)')
             self.axs[1].set_xlabel('25 ns slot')
             self.axs[1].set_ylabel('Intensity')
-            plt.tight_layout()
+            figure.tight_layout(pad=0.4, w_pad=0.5, h_pad=1.0)
             plt.show()
       
+
+        def get_intensity_per_bunch(self, selector=None):
+            """
+            Get intensity of selected bunches. 
+            Selector is array with bunches, e.g. [0, 1, 2, 3] to get first four Default: all
+            Returns: matrix with intensity evolution for each selected bunch 
+            """
+            # Select correct bunches
+            try:
+                self.bunch_subset = self.bunch_index if selector is None else self.bunch_index[selector]
+                return self.bunchIntensity[:, self.bunch_subset] * self.unit  # in correct unit
+            except IndexError:
+                print('\nNo sufficiently strong bunch intensities found!\n')
+                return
+        
+        def plot_selected_bunches(self, selector=None, plot_legend=True, figname='fbct'):
+            """Plot intensity evolution of specific bunches"""
+            selected_bunchIntensities = self.get_intensity_per_bunch(selector)
+            ctime = 1e-3*self.measStamp # in seconds 
+            
+            # Plot these selected bunches - iterate over bunches
+            figure, ax = self.createSubplots(figname)
+            #ax = axs[0]
+            count = 0
+            for bunch in selected_bunchIntensities.T:
+                ax.plot(ctime, bunch, label='Bunch {}'.format(count + 1))
+                count += 1
+            ax.set_ylabel('Bunch intensity')
+            ax.set_xlabel('Cycle time [s]')
+            if plot_legend:
+                ax.legend()
+            figure.tight_layout(pad=0.4, w_pad=0.5, h_pad=1.0)
+            return figure        
+        
 
 class WS(SPS):
         """
@@ -156,7 +201,9 @@ class WS(SPS):
         Parameters
             data : raw parquet file 
         """
-        def __init__(self, parquet_file):  # do we need pmtSelection=2 ? 
+        def __init__(self, 
+                     parquet_file,
+                     ):  
             super().__init__()  # instantiate SPS class
             
             # Load data
@@ -239,8 +286,9 @@ class WS(SPS):
         
         def extract_Meaningful_Bunches_profiles(self, data, 
                                                 ws_set='Set1',
-                                                no_bunches=40, 
-                                                amplitude_threshhold = 1200  # to avoid noise readouts
+                                                no_bunches=40,
+                                                amplitude_threshold=1200,
+                                                max_profiles=56
                                                 ):
             """ Get all WS profiles and positions from chosen PM, only focus on the meaningful ones"""
             
@@ -249,15 +297,27 @@ class WS(SPS):
             
             # Select profiles whose amplitude reading are above the threshoold
             relevant_profiles, relevant_profile_positions, index = [], [], []
-            for i, profile in enumerate(profile_data_all_bunches):
-                 if np.max(profile) >= amplitude_threshhold:
+            for i, profile in enumerate(profile_data_all_bunches):         
+                 if np.max(profile) >= amplitude_threshold:
                      relevant_profiles.append(profile)
                      relevant_profile_positions.append(profile_position_all_bunches[i])
                      index.append(i)
             if not relevant_profiles:
                 print('\n\nNO RELEVANT PROFILES ABOVE NOISE THRESHOLD EXTRACTED!\n\n')
             
-            return relevant_profile_positions, relevant_profiles, index
+            # REDO THIS, BUT COMPARING THE INTEGRALS! NEED FIT FOR THIS 
+            """
+            # If the number of relevant profiles exceeds max_profiles, select the top max_profiles based on amplitude
+            if len(relevant_profiles) > max_profiles:
+                # Sort profiles by their maximum amplitude
+                sorted_profiles = sorted(zip(relevant_profiles, relevant_profile_positions, index), key=lambda x: np.max(x[0]), reverse=True)
+                sorted_profiles = sorted_profiles[:max_profiles]
+                
+                # Unzip the sorted profiles into separate lists
+                relevant_profiles, relevant_profile_positions, index = zip(*sorted_profiles)
+            """
+            
+            return list(relevant_profile_positions), (relevant_profiles), (index)
         
         
         def fit_Gaussian_To_and_Plot_Relevant_Profiles(self, 
@@ -274,8 +334,13 @@ class WS(SPS):
             """
             # Read data
             data = self.data_X if plane=='X' else self.data_Y
-            pos_all, prof_all, index = self.extract_Meaningful_Bunches_profiles(data, ws_set)
             
+            # If all bunches selected, then set much lower amplitude threshhold
+            if no_profiles==0:
+                pos_all, prof_all, index = self.extract_Meaningful_Bunches_profiles(data, ws_set, amplitude_threshold=-150)
+            else:
+                pos_all, prof_all, index = self.extract_Meaningful_Bunches_profiles(data, ws_set)
+
             # Initiate figure
             if figname is None:
                 figname = 'BWS {}'.format(plane)
@@ -341,6 +406,7 @@ class WS(SPS):
 
             ax.set_xlabel('Position (mm)')
             ax.set_ylabel('Amplitude (a.u.)')    
+            figure.tight_layout(pad=0.4, w_pad=0.5, h_pad=1.0)
             
             return figure, n_emittances, sigmas_raw, self.acqTime[plane], ctime_s
      
