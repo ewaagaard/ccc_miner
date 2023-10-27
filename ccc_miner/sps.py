@@ -1,5 +1,5 @@
 """
-Process and plot extracted MD data from SPS, PS and LEIR, tailoried for each individual format
+Class container to process and plot extracted MD data from SPS
 """
 import numpy as np
 import json
