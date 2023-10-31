@@ -2,14 +2,16 @@
 Class container to process and plot MD data from Proton Synchrotron (PS)
 """
 import numpy as np
-import json
 from pathlib import Path
 import matplotlib.pyplot as plt
-import matplotlib
-import pyarrow.parquet as pq
 from scipy.optimize import curve_fit
 from scipy.signal import savgol_filter
 import pandas as pd
+import os
+
+from scipy.constants import c as c_light
+from ccc_miner import plot_settings
+import seaborn as sns
 
 # Calculate the absolute path to the data folder relative to the module's location
 data_folder = Path(__file__).resolve().parent.joinpath('../data').absolute()
@@ -69,26 +71,31 @@ class PS_Tomoscope(PS):
     PS Tomoscope class
     
     Parameters: (all found from tomoscope application)
-        t_end 
-        t_injection, 
+        t_span   (has to be specified in ms, can be seen on tomoscope application)
+        t_injection, (default 234 ms)
         number of traces, 
-        N_samples
+        N_samples, 
+        beta_at_inj (relativistic beta at injection, value taken for Pb ions)
+        bunch_split (True or False)
     """ 
     def __init__(self,
-                 t_end,
+                 t_span,
                  t_inj=234,
                  no_traces=400,
-                 N_samples=2000
+                 N_samples=2000,
+                 beta_at_inj = 0.3704,
+                 bunch_split=False
                  ):
         super().__init__()  # instantiate PS class
         
         # Store tomoscope parameters
-        self.t_end = t_end
+        self.t_end = t_inj + t_span  # t_span seen on tomoscope application
         self.t_inj = t_inj
-        self.time = np.linspace(t_inj, t_end, self.no_traces) 
         self.no_traces = no_traces
+        self.time = np.linspace(t_inj, self.t_end, self.no_traces) 
         self.N_samples = N_samples
-        
+        self.beta_at_inj = beta_at_inj 
+        self.bunch_split = bunch_split
         
     def convert_dat_to_dataframe(self, 
                                  dat_file,
@@ -97,13 +104,33 @@ class PS_Tomoscope(PS):
         """Returns pandas dataframe from raw dat file"""
         data_raw = np.genfromtxt(dat_file, skip_header=skip_header)
         data = np.reshape(data_raw, (self.no_traces, self.N_samples)) 
+        df = pd.DataFrame(data)
+        df['Cycle_time'] = self.time
+        df = df.set_index('Cycle_time')
+        return df
+        
+    def get_heatmap(self, dat_file):
+        """Returns seaborn heatmap (waterfall plot) of bunch profiles"""
+        df = self.convert_dat_to_dataframe(dat_file)
+        
+        # Plot the heatmap of the data 
+        fig, ax = plt.subplots(figsize=(8, 6))
+        sns.heatmap(df, ax=ax, cbar=False)
+        ax.set(yticklabels=[])
+        fig.tight_layout(pad=0.4, w_pad=0.5, h_pad=1.0)
+        return fig
         
         
-        
-        
-    def fit_gaussian_to_first_peak(self, df, row_index):
+    def fit_gaussian_to_first_peak(self, 
+                                   df, 
+                                   row_index, 
+                                   plot_output_dest):
         """Extract bunch length sigma_z from Gaussian of first peak among bunches"""
                 
+        # Check that output directory exists
+        os.makedirs(plot_output_dest, exist_ok=True)
+        os.makedirs('{}/BL_in_time'.format(plot_output_dest), exist_ok=True)
+        
         # Define data
         data = df.iloc[row_index]
         
@@ -156,9 +183,126 @@ class PS_Tomoscope(PS):
             ax.plot(x, data, 'b-', label='Data')
             managed_fit = False
         
-        fig.savefig('Plots/BL_in_time/{}_curve.png'.format(row_index), dpi=250)
+        fig.savefig('{}/BL_in_time/{}_curve.png'.format(plot_output_dest, row_index), dpi=250)
         
         plt.close()
 
         if managed_fit:
             return sigma, d_sigma
+        
+        
+    def fit_gaussians_to_all_peaks_and_plot(self, 
+                                            dat_file, 
+                                            output_dest='Output_plots', 
+                                            sigma_tol=65,
+                                            bunch_split_start=90,
+                                            bunch_split_stop=104,
+                                            energy_ramping=False,
+                                            beta_over_cycle=None):
+            """
+            Iterate through profiles over cycle time and estimate bunch length
+            
+            Parameters:
+                dat_file (raw file from tomoscope)
+                output_dest (output destination for plots)
+                sigma_tol (max accepeted value for bunch length in ns)
+                bunch_split_start, bunch_split_stop (index for bunch splitting, if happens)
+                energy_ramping (flag, if we stay at injection)
+                beta_over_cycle  (relativistic beta values over cycle time)
+            """
+            
+            # Make output plot directory
+            os.makedirs(output_dest, exist_ok=True)
+            print('\nSaving data to {}...\n'.format(output_dest))
+            
+            # Extract dataframe from file 
+            df_sigma_raw = self.convert_dat_to_dataframe(dat_file)
+            
+            # Initialize empty arrays for row index and sigmas where fit is reasonable
+            sigmas = []
+            covariances = []
+            indices = []
+            
+            # IF bunch splitting, add index
+            if self.bunch_split:    
+                bunch_split = []
+                bunch_split_index = np.arange(90, 104)  # among the 400 traces, bunch splitting happens heree
+            
+            # Loop over all profiles of cycle
+            i = 0
+            for row_index in range(len(df_sigma_raw)):
+                sigma, d_sigma = self.fit_gaussian_to_first_peak(df_sigma_raw , row_index, output_dest)
+
+                # Check if it was possible to fit sigma
+                if sigma is not None:
+                    if np.abs(sigma) < sigma_tol:
+                        sigmas.append(np.abs(sigma))
+                        covariances.append(d_sigma)
+                        indices.append(row_index)
+                        
+                        # Add flag for bunch splitting 
+                        if self.bunch_split:
+                            bunch_split.append(1) if i in bunch_split_index else bunch_split.append(0)
+                i += 1
+            print(f"Finished! {len(sigmas)} out of {len(df_sigma_raw)} succeeded in fitting!")
+
+            # Create new dataframe, keeping only the points with a good fit
+            df = pd.DataFrame()
+            df['cycle_time'] = df_sigma_raw.index
+            df = df.iloc[indices]
+            df['sigma'] = sigmas
+            df['covariance'] = covariances
+            
+            # Add weighted rolling average with 5 points
+            WMA_nr = 5
+            weights = np.ones(WMA_nr)/WMA_nr  # weights have to add up to 1
+            df['sigma_WMA'] = df['sigma'].rolling(WMA_nr).apply(lambda x: np.sum(weights*x))
+            
+            if self.bunch_split:
+                df['bunch_split'] = bunch_split
+                
+                # Update bunch split index and 
+                BS_ind_new = [i for i, e in enumerate(bunch_split) if e != 0]
+                bunch_split_start, bunch_split_stop = df['cycle_time'].iloc[BS_ind_new[0]], df['cycle_time'].iloc[BS_ind_new[-1]]
+                print("\nBunch split starts at {:.3f} ms and ends at {:.3f} ms".format(bunch_split_start, bunch_split_stop))
+                
+                # Add index with how many bunches there are 
+                df['N_bunches'] = 2 * np.ones(len(df))
+                df['N_bunches'].iloc[BS_ind_new[0]:] = 4
+                
+            # Plot bunch length evolution in ns
+            fig1, ax1 = plt.subplots(figsize=(10, 6))
+            ax1.axvline(x=self.t_inj, linewidth=2, label='Injection at 235 ms')
+            ax1.plot(df['cycle_time'] , df['sigma'], 'b-',  marker='o', label='Measured beam size')
+            ax1.plot(df['cycle_time'] , df['sigma_WMA'], ls='--', color='cyan', linewidth = 1.5, label='Sigma rolling average')
+            if self.bunch_split:
+                ax1.axvspan(bunch_split_start, bunch_split_stop, alpha=0.5, color='red', label='Bunch splitting')
+            ax1.set_ylabel(r'$\sigma$ [ns]')
+            ax1.set_xlabel('Cycle time [ms]')
+            ax1.legend()
+            fig1.tight_layout(pad=0.4, w_pad=0.5, h_pad=1.0)
+            
+            # Plot bunch length evolution in m
+            beta = self.beta_at_inj if not energy_ramping else beta_over_cycle
+            df['sigma [m]'] =  df['sigma'] * 1e-9 * c_light * beta
+            df['sigma_WMA [m]'] =  df['sigma_WMA'] * 1e-9 * c_light * beta
+            
+            # Add dataframe as 
+            df.to_csv('{}/bunch_length_data.csv'.format(output_dest))
+            self.df = df
+            
+        
+            fig2, ax2 = plt.subplots(figsize=(10, 6))
+            ax2.axvline(x=self.t_inj, linewidth=2, label='Injection at 235 ms')
+            ax2.plot(df['cycle_time'] , df['sigma [m]'], 'coral', ls='-',  marker='o', alpha=0.8, label='Measured bunch length')
+            ax2.plot(df['cycle_time'] , df['sigma_WMA [m]'], ls='--', color='red', linewidth = 1.5, label='Sigma rolling average')
+            if self.bunch_split:
+                ax2.axvspan(bunch_split_start, bunch_split_stop, alpha=0.5, color='red', label='Bunch splitting')
+            ax2.set_ylabel(r'$\sigma$ [m]')
+            ax2.set_xlabel('Cycle time [ms]')
+            ax2.legend()
+            fig2.tight_layout(pad=0.4, w_pad=0.5, h_pad=1.0)
+            
+            return fig1, fig2
+            
+            

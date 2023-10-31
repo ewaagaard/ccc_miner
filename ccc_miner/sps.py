@@ -9,7 +9,8 @@ import matplotlib
 import pyarrow.parquet as pq
 from scipy.optimize import curve_fit
 from scipy.signal import savgol_filter
-import pandas as pd
+
+from ccc_miner import plot_settings
 
 # Calculate the absolute path to the data folder relative to the module's location
 data_folder = Path(__file__).resolve().parent.joinpath('../data').absolute()
