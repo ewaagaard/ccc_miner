@@ -124,12 +124,13 @@ class PS_Tomoscope(PS):
     def fit_gaussian_to_first_peak(self, 
                                    df, 
                                    row_index, 
-                                   plot_output_dest):
+                                   plot_output_dest,
+                                   name_string):
         """Extract bunch length sigma_z from Gaussian of first peak among bunches"""
                 
         # Check that output directory exists
         os.makedirs(plot_output_dest, exist_ok=True)
-        os.makedirs('{}/BL_in_time'.format(plot_output_dest), exist_ok=True)
+        os.makedirs('{}/{}_BL_in_time'.format(name_string, plot_output_dest), exist_ok=True)
         
         # Define data
         data = df.iloc[row_index]
@@ -183,7 +184,7 @@ class PS_Tomoscope(PS):
             ax.plot(x, data, 'b-', label='Data')
             managed_fit = False
         
-        fig.savefig('{}/BL_in_time/{}_curve.png'.format(plot_output_dest, row_index), dpi=250)
+        fig.savefig('{}/{}_BL_in_time/{}_curve.png'.format(name_string, plot_output_dest, row_index), dpi=250)
         
         plt.close()
 
@@ -192,7 +193,8 @@ class PS_Tomoscope(PS):
         
         
     def fit_gaussians_to_all_peaks_and_plot(self, 
-                                            dat_file, 
+                                            dat_file,
+                                            name_string,
                                             output_dest='Output_plots', 
                                             sigma_tol=65,
                                             bunch_split_start=90,
@@ -203,7 +205,8 @@ class PS_Tomoscope(PS):
             Iterate through profiles over cycle time and estimate bunch length
             
             Parameters:
-                dat_file (raw file from tomoscope)
+                dat_file (raw file from tomoscope),
+                name_string (e.g. EARLY or NOMINAL)
                 output_dest (output destination for plots)
                 sigma_tol (max accepeted value for bunch length in ns)
                 bunch_split_start, bunch_split_stop (index for bunch splitting, if happens)
@@ -231,7 +234,10 @@ class PS_Tomoscope(PS):
             # Loop over all profiles of cycle
             i = 0
             for row_index in range(len(df_sigma_raw)):
-                sigma, d_sigma = self.fit_gaussian_to_first_peak(df_sigma_raw , row_index, output_dest)
+                sigma, d_sigma = self.fit_gaussian_to_first_peak(df_sigma_raw, 
+                                                                 row_index, 
+                                                                 output_dest, 
+                                                                 name_string)
 
                 # Check if it was possible to fit sigma
                 if sigma is not None:
@@ -288,17 +294,17 @@ class PS_Tomoscope(PS):
             df['sigma_WMA [m]'] =  df['sigma_WMA'] * 1e-9 * c_light * beta
             
             # Add dataframe as 
-            df.to_csv('{}/bunch_length_data.csv'.format(output_dest))
+            df.to_csv('{}/{}_bunch_length_data.csv'.format(name_string, output_dest))
             self.df = df
             
         
-            fig2, ax2 = plt.subplots(figsize=(10, 6))
+            fig2, ax2 = plt.subplots(figsize=(9, 6))
             ax2.axvline(x=self.t_inj, linewidth=2, label='Injection at 235 ms')
             ax2.plot(df['cycle_time'] , df['sigma [m]'], 'coral', ls='-',  marker='o', alpha=0.8, label='Measured bunch length')
-            ax2.plot(df['cycle_time'] , df['sigma_WMA [m]'], ls='--', color='red', linewidth = 1.5, label='Sigma rolling average')
+            ax2.plot(df['cycle_time'] , df['sigma_WMA [m]'], ls='-', color='red', linewidth = 3.5, label='$\sigma$ rolling average')
             if self.bunch_split:
                 ax2.axvspan(bunch_split_start, bunch_split_stop, alpha=0.5, color='red', label='Bunch splitting')
-            ax2.set_ylabel(r'$\sigma$ [m]')
+            ax2.set_ylabel(r'$\sigma_{z}$ [m]')
             ax2.set_xlabel('Cycle time [ms]')
             ax2.legend()
             fig2.tight_layout(pad=0.4, w_pad=0.5, h_pad=1.0)
