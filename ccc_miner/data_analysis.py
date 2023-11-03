@@ -25,7 +25,6 @@ class Analyze_WireScanners():
         Returns: dictionary of emittances 
         """
         # If string is not empty, check if directory exists 
-        #if not output_dest:
         os.makedirs(output_dest, exist_ok=True)
         os.makedirs(output_dest + '/Plots', exist_ok=True)
             
@@ -94,6 +93,74 @@ class Analyze_WireScanners():
         return full_data
 
 
+    def plot_subset_of_WS_data(self, parquet_file_list, output_dest='', save_json=True):
+        """Provide list with special subset of parquet files to be analyzed
+            Folder already specified when instantiating the class
+        """
+        os.makedirs(output_dest, exist_ok=True)
+        os.makedirs(output_dest + '/Plots', exist_ok=True)
+        
+        # Empty dictionary for full data
+        full_data = {
+                     'UTC_timestamp_X':[], 
+                     'N_emittances_X':[],
+                     'N_avg_emitX' : [],
+                     'Ctime_X': [],
+                     'UTC_timestamp_Y': [],
+                     'N_emittances_Y':[],
+                     'N_avg_emitY' : [],
+                     'Ctime_Y': []
+                     }
+        
+        # Iterate over files in list
+        for f in parquet_file_list: 
+            # Instantiate class, try to load parquet file
+            try:
+                print('\nOpening {}\n'.format(str(self.folder) + '/' + f))
+                ws = WS(str(self.folder) + '/' + f)
+                
+                # First test
+                try:
+                    figure_X, n_emittances_X, sigmas_raw_X, timestamp_X, ctime_X = ws.fit_Gaussian_To_and_Plot_Relevant_Profiles(plane='X', 
+                                                                                                                        no_profiles=self.no_profile_per_scan,  
+                                                                                                                        figname=f+'X') 
+                    figure_X.savefig('{}/Plots/{}_X.png'.format(output_dest, os.path.splitext(f)[0]), dpi=250)
+                    
+                    # Append data if not all NaN
+                    if not np.isnan(n_emittances_X).all():
+                        full_data['UTC_timestamp_X'].append(timestamp_X)
+                        full_data['N_emittances_X'].append(n_emittances_X.tolist())
+                        full_data['N_avg_emitX'].append(np.mean(n_emittances_X))
+                        full_data['Ctime_X'].append(ctime_X)
+                    
+                except TypeError:
+                    print('Did not find WS data for X in {}'.format(f))
+    
+                try:           
+                    figure_Y, n_emittances_Y, sigmas_raw_Y, timestamp_Y, ctime_Y = ws.fit_Gaussian_To_and_Plot_Relevant_Profiles(plane='Y', 
+                                                                                                                       no_profiles=self.no_profile_per_scan,
+                                                                                                                       figname=f+'Y') 
+                    figure_Y.savefig('{}/Plots/{}_Y.png'.format(output_dest, os.path.splitext(f)[0]), dpi=250)
+                    
+                    # Append data if not all NaN
+                    if not np.isnan(n_emittances_Y).all():
+                        full_data['UTC_timestamp_Y'].append(timestamp_Y)
+                        full_data['N_emittances_Y'].append(n_emittances_Y.tolist())
+                        full_data['N_avg_emitY'].append(np.mean(n_emittances_Y))
+                        full_data['Ctime_Y'].append(ctime_Y)
+                    
+                except TypeError:
+                    print('Did not find WS data for Y in {}'.format(f))
+            except KeyError:
+                print('\n\nCannot open device data!\n\n')
+            
+        # Dump whole dictionary to json file 
+        if save_json:
+            with open('{}/full_WS_data.json'.format(output_dest), 'w') as fp:
+                json.dump(full_data, fp) 
+
+        return full_data
+
 
     def return_full_dict(self, input_dest=''):
         """
@@ -115,6 +182,33 @@ class Analyze_WireScanners():
 
         return full_data
 
+
+    def plot_emittance_over_bunch_number(self, full_data):
+        """For a processed WS subset of parquet files
+           Params: full_data dict from self.plot_and_save_all_WS_emittances or self.plot_subset_of_WS_data
+           Returns plot of emittance as a function of bunch
+        """
+        # Iterate over vertical emittance:
+        no_samples = len(full_data['N_emittances_Y'])
+            
+        fig, ax = plt.subplots(2, no_samples, figsize=(10, 6), sharex=True, sharey=True)
+        for i, eY_set in enumerate(full_data['N_emittances_Y']):
+            eY_set = np.flip(eY_set)
+            eX_set = np.flip(full_data['N_emittances_X'][i])
+            bunch_number_X = np.arange(1, len(eX_set)+1)
+            bunch_number_Y = np.arange(1, len(eY_set)+1)
+            ax[0, i].bar(bunch_number_X, 1e6 * eX_set, color='cornflowerblue', label='X: ' + full_data['UTC_timestamp_X'][i])
+            ax[1, i].bar(bunch_number_Y, 1e6 * eY_set, color='orange', label='Y: ' + full_data['UTC_timestamp_Y'][i])
+        #for ax in ax[:, 0]:
+        #    ax.set_ylabel("$\epsilon_{x,y}$ [$\mu$m rad]")
+        #for ax in ax[1, :]:
+        #    ax.set_xlabel("Bunch number")
+        #ax.legend(fontsize=12, loc=2)
+        fig.tight_layout(pad=0.4, w_pad=0.5, h_pad=1.0)
+        
+        """HOW CAN WE MAKE THIS USEFUL?"""
+        
+        return fig
 
     def plot_emittance_over_cycleTime(self, input_dest='', xlim=None, ylim=None):
         """
@@ -252,3 +346,35 @@ class Analyze_FBCT_data:
         ax.legend(loc=2)
         fig.tight_layout(pad=0.4, w_pad=0.5, h_pad=1.0)
         return fig, ctime, Nb
+    
+    
+"""
+### TO DO - PROCESS FBCT DATA, FIND CLOSEST RECORDING
+
+  --> example of finding closest point in time of two measurements 
+import numpy as np
+
+# Assuming you have two dictionaries: full_data and full_data2
+# Each dictionary should have a 'timestamp' entry with DatetimeIndex
+
+# Convert the 'timestamp' entries in both dictionaries to numpy arrays
+timestamps1 = np.array(full_data['timestamp'])
+timestamps2 = np.array(full_data2['timestamp'])
+
+# Initialize lists to store the corresponding indices in each dictionary
+closest_indices1 = []
+closest_indices2 = []
+
+for timestamp1 in timestamps1:
+    # Calculate the time difference between timestamp1 and all timestamps in timestamps2
+    time_diff = np.abs(timestamp1 - timestamps2)
+    
+    # Find the index of the minimum time difference
+    closest_index = np.argmin(time_diff)
+    
+    # Append the indices to the respective lists
+    closest_indices1.append(np.where(timestamps1 == timestamp1)[0][0])
+    closest_indices2.append(closest_index)
+
+# Now, closest_indices1 and closest_indices2 contain the indices of the closest matching entries in each dictionary.
+""" 

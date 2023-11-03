@@ -58,10 +58,11 @@ class SPS():
         self.axs = axs
         return f, axs
 
+    ########### FIT FUNCTION - GAUSSIAN ###########
     def Gaussian(self, x, A, mean, sigma, offset):
         """Gaussian fit of the data """
         return A * np.exp(-(x - mean)**2 / (2 * sigma**2)) + offset
-        
+    
     
     def fit_Gaussian(self, x_data, y_data, p0 = None):
         """ Fit Gaussian from given X and Y data, return parameters"""
@@ -83,6 +84,11 @@ class SPS():
             popt = np.infty * np.ones(len(initial_guess))
             
         return popt
+    
+    ########### FIT FUNCTION - Q-GAUSSIAN ###########
+    def Q_Gaussian(self, x, mu, q, b, A, c, sl):
+        pass 
+       #return c+sl*x+A*np.sqrt(b)/_Cq(q)*_eq(-b*(x-mu)**2,q) 
 
 
 class FBCT(SPS):
@@ -287,38 +293,65 @@ class WS(SPS):
         
         def extract_Meaningful_Bunches_profiles(self, data, 
                                                 ws_set='Set1',
-                                                no_bunches=40,
+                                                min_integral_fraction=0.5,
                                                 amplitude_threshold=1200,
-                                                max_profiles=56
                                                 ):
-            """ Get all WS profiles and positions from chosen PM, only focus on the meaningful ones"""
+            """ 
+            Get all WS profiles and positions from chosen PM, only focus on the meaningful ones
             
+            Params:
+            ------
+            data (X or Y, from method self.load_X_Y_data() )
+            ws_set ('Set1' (IN, default) or 'Set2' (Out))
+            min_integral_fraction (fractional threshold of max integral that each profile needs to be classified as real)
+            amplitude threshold (minimum peak amplitude a profile needs to be classified as a readout)
+            
+            Returns:
+            -------
+            list(relevant_profile_positions), (relevant_profiles), (index)
+            """
             # Extract the single-PM chosen bunches
             profile_position_all_bunches, profile_data_all_bunches = self.getSingle_PM_ProfileData(data, ws_set)
             
             # Select profiles whose amplitude reading are above the threshoold
-            relevant_profiles, relevant_profile_positions, index = [], [], []
+            relevant_profiles, relevant_profile_positions, integral_values, index = [], [], [], []
             for i, profile in enumerate(profile_data_all_bunches):         
                  if np.max(profile) >= amplitude_threshold:
+                     
+                     # The peak above amplitude threshold, shift profile to zero-level to calculate integral
+                     profile_shifted = profile + np.abs(np.min(profile)) if np.min(profile) < 0 else profile
+                     integral_values.append(np.trapz(profile_shifted)) 
+                     
                      relevant_profiles.append(profile)
                      relevant_profile_positions.append(profile_position_all_bunches[i])
                      index.append(i)
             if not relevant_profiles:
                 print('\n\nNO RELEVANT PROFILES ABOVE NOISE THRESHOLD EXTRACTED!\n\n')
-            
-            # REDO THIS, BUT COMPARING THE INTEGRALS! NEED FIT FOR THIS 
-            """
-            # If the number of relevant profiles exceeds max_profiles, select the top max_profiles based on amplitude
-            if len(relevant_profiles) > max_profiles:
-                # Sort profiles by their maximum amplitude
-                sorted_profiles = sorted(zip(relevant_profiles, relevant_profile_positions, index), key=lambda x: np.max(x[0]), reverse=True)
-                sorted_profiles = sorted_profiles[:max_profiles]
+                pass
+            else: 
+                # Calculate the threshold for X% of the maximum integral
+                threshold = max(integral_values) * min_integral_fraction    
                 
+                # Select profiles whose integral is above the threshold
+                filtered_profiles = []
+                filtered_profile_positions = []
+                filtered_indices = []
+                for i, (profile, position, index) in enumerate(zip(relevant_profiles, relevant_profile_positions, index)):
+                    if integral_values[i] >= threshold:
+                        filtered_profiles.append(profile)
+                        filtered_profile_positions.append(position)
+                        filtered_indices.append(index)
+                
+                if not filtered_profiles:
+                    print('\n\nNO RELEVANT PROFILES ABOVE THE INTEGRAL THRESHOLD EXTRACTED!\n\n')
+                
+                # Sort the filtered profiles by their integral values
+                sorted_profiles = sorted(zip(filtered_profiles, filtered_profile_positions, filtered_indices), key=lambda x: np.trapz(x[0]), reverse=True)
+    
                 # Unzip the sorted profiles into separate lists
                 relevant_profiles, relevant_profile_positions, index = zip(*sorted_profiles)
-            """
-            
-            return list(relevant_profile_positions), (relevant_profiles), (index)
+                
+                return list(relevant_profile_positions), (relevant_profiles), (index)
         
         
         def fit_Gaussian_To_and_Plot_Relevant_Profiles(self, 
