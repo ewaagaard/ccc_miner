@@ -18,10 +18,13 @@ class Analyze_WireScanners():
         self.folder = ws_data_path
         self.no_profile_per_scan = no_profile_per_scan
         
-    def plot_and_save_all_WS_emittances(self, output_dest=''):
+    def plot_and_save_all_WS_emittances(self, 
+                                        output_dest='', 
+                                        also_fit_Q_Gaussian=False):
         """
         Iterate through a given WS data folder and save beam profile plots
-        Saves all emittances and time stamps to a json dict, which it also saves 
+        Saves all emittances and time stamps to a json dict, which it also saves
+        also_fit_Q_Gaussian - optional flag (default False)
         Returns: dictionary of emittances 
         """
         # If string is not empty, check if directory exists 
@@ -40,6 +43,13 @@ class Analyze_WireScanners():
                      'Ctime_Y': []
                      }
 
+        # Add extra key for Q_gaussian values if needed
+        if also_fit_Q_Gaussian:
+            full_data['q_values_X'] = []
+            full_data['q_values_X_mean'] = []
+            full_data['q_values_Y'] = []
+            full_data['q_values_Y_mean'] = []
+
         # Walk through data directory 
         for dirpath, dnames, fnames in os.walk(self.folder):
             for f in fnames:
@@ -53,9 +63,14 @@ class Analyze_WireScanners():
                         
                         # First test
                         try:
-                            figure_X, n_emittances_X, sigmas_raw_X, timestamp_X, ctime_X = ws.fit_Gaussian_To_and_Plot_Relevant_Profiles(plane='X', 
+                            if also_fit_Q_Gaussian:
+                                figure_X, n_emittances_X, sigmas_raw_X, timestamp_X, ctime_X, Q_values_X = ws.fit_Gaussian_To_and_Plot_Relevant_Profiles(plane='X', 
                                                                                                                                 no_profiles=self.no_profile_per_scan,  
-                                                                                                                                figname=f+'X') 
+                                                                                                                                figname=f+'X', also_fit_Q_Gaussian=True)
+                            else:
+                                figure_X, n_emittances_X, sigmas_raw_X, timestamp_X, ctime_X = ws.fit_Gaussian_To_and_Plot_Relevant_Profiles(plane='X', 
+                                                                                                                                no_profiles=self.no_profile_per_scan,  
+                                                                                                                                figname=f+'X')
                             figure_X.savefig('{}/Plots/{}_X.png'.format(output_dest, os.path.splitext(f)[0]), dpi=250)
                             
                             # Append data if not all NaN
@@ -64,12 +79,20 @@ class Analyze_WireScanners():
                                 full_data['N_emittances_X'].append(n_emittances_X.tolist())
                                 full_data['N_avg_emitX'].append(np.mean(n_emittances_X))
                                 full_data['Ctime_X'].append(ctime_X)
+                                if also_fit_Q_Gaussian:
+                                    full_data['q_values_X'].append(Q_values_X.tolist())
+                                    full_data['q_values_X_mean'].append(np.mean(Q_values_X))
                             
                         except TypeError:
                             print('Did not find WS data for X in {}'.format(f))
             
-                        try:           
-                            figure_Y, n_emittances_Y, sigmas_raw_Y, timestamp_Y, ctime_Y = ws.fit_Gaussian_To_and_Plot_Relevant_Profiles(plane='Y', 
+                        try:
+                            if also_fit_Q_Gaussian:
+                                figure_Y, n_emittances_Y, sigmas_raw_Y, timestamp_Y, ctime_Y, Q_values_Y = ws.fit_Gaussian_To_and_Plot_Relevant_Profiles(plane='Y', 
+                                                                                                                               no_profiles=self.no_profile_per_scan,
+                                                                                                                               figname=f+'Y', also_fit_Q_Gaussian=True) 
+                            else:
+                                figure_Y, n_emittances_Y, sigmas_raw_Y, timestamp_Y, ctime_Y = ws.fit_Gaussian_To_and_Plot_Relevant_Profiles(plane='Y', 
                                                                                                                                no_profiles=self.no_profile_per_scan,
                                                                                                                                figname=f+'Y') 
                             figure_Y.savefig('{}/Plots/{}_Y.png'.format(output_dest, os.path.splitext(f)[0]), dpi=250)
@@ -80,6 +103,9 @@ class Analyze_WireScanners():
                                 full_data['N_emittances_Y'].append(n_emittances_Y.tolist())
                                 full_data['N_avg_emitY'].append(np.mean(n_emittances_Y))
                                 full_data['Ctime_Y'].append(ctime_Y)
+                                if also_fit_Q_Gaussian:
+                                    full_data['q_values_Y'].append(Q_values_Y.tolist())
+                                    full_data['q_values_Y_mean'].append(np.mean(Q_values_Y))
                             
                         except TypeError:
                             print('Did not find WS data for Y in {}'.format(f))
@@ -227,6 +253,28 @@ class Analyze_WireScanners():
             ax.set_xlim(0, xlim)
         if ylim is not None:
             ax.set_ylim(0.7, ylim)
+        ax.legend(loc=2)
+        fig.tight_layout(pad=0.4, w_pad=0.5, h_pad=1.0)
+        return fig
+
+
+    def plot_q_values_over_cycleTime(self, input_dest='', xlim=None, ylim=None):
+        """
+        Loads json dict and plots average q-values
+        Returns: figure
+        """
+        # Load processed WS data
+        full_data = self.return_full_dict(input_dest)
+        
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.errorbar(full_data['Ctime_X'], np.array(full_data['q_values_X_mean']), yerr= np.std(full_data['q_values_X'], axis=1), fmt="o", color='teal', label="X")
+        ax.errorbar(full_data['Ctime_Y'], np.array(full_data['q_values_Y_mean']), yerr=np.std(full_data['q_values_Y'], axis=1), fmt="o", color='magenta', label="Y")
+        ax.set_ylabel("$q$-value")
+        ax.set_xlabel("Cycle time [s]")
+        if xlim is not None:
+            ax.set_xlim(0, xlim)
+        if ylim is not None:
+            ax.set_ylim(0.6, ylim)
         ax.legend(loc=2)
         fig.tight_layout(pad=0.4, w_pad=0.5, h_pad=1.0)
         return fig

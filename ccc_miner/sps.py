@@ -2,6 +2,7 @@
 Class container to process and plot extracted MD data from SPS
 """
 import numpy as np
+from scipy.special import gamma as Gamma
 import json
 from pathlib import Path
 import matplotlib.pyplot as plt
@@ -65,7 +66,12 @@ class SPS():
     
     
     def fit_Gaussian(self, x_data, y_data, p0 = None):
-        """ Fit Gaussian from given X and Y data, return parameters"""
+        """ 
+        Fit Gaussian to given X and Y data (numpy arrays)
+        Custom guess p0 can be provided, otherwise generate guess
+        
+        Returns: parameters popt
+        """
         
         # if starting guess not given, provide some qualified guess from data
         if p0 is not None: 
@@ -86,9 +92,68 @@ class SPS():
         return popt
     
     ########### FIT FUNCTION - Q-GAUSSIAN ###########
-    def Q_Gaussian(self, x, mu, q, b, A, c, sl):
-        pass 
-       #return c+sl*x+A*np.sqrt(b)/_Cq(q)*_eq(-b*(x-mu)**2,q) 
+    def _Cq(self, q, margin=5e-4):
+        """
+        Normalizing constant from Eq. (2.2) in https://link.springer.com/article/10.1007/s00032-008-0087-y
+        with a small margin around 1.0 for numerical stability
+        """
+        if q < (1 - margin):
+            Cq = (2 * np.sqrt(np.pi) * Gamma(1.0/(1.0-q))) / ((3.0 - q) * np.sqrt(1.0 - q) * Gamma( (3.0-q)/(2*(1.0 -q))))   
+        elif (q > (1.0 - margin) and q < (1.0 + margin)):
+            Cq = np.sqrt(np.pi)
+        else:
+            Cq = (np.sqrt(np.pi) * Gamma((3.0-q)/(2*(q-1.0)))) / (np.sqrt(q-1.0) * Gamma(1.0/(q-1.0)))
+        if q > 3.0:
+            raise ValueError("q must be smaller than 3!")
+        else:
+            return Cq
+    
+    def _eq(self, x, q):
+        """ Q-exponential function
+            Available at https://link.springer.com/article/10.1007/s00032-008-0087-y
+        """
+        eq = np.zeros(len(x))
+        for i, xx in enumerate(x):
+            if ((q != 1) and (1 + (1 - q) * xx) > 0):
+                eq[i] = (1 + (1 - q) * xx)**(1 / (1 - q))
+            elif q==1:
+                eq[i] = np.exp(xx)
+            else:
+                eq[i] = 0
+        return eq
+    
+    
+    def Q_Gaussian(self, x, mu, q, beta, A, C):
+        """
+        Returns Q-Gaussian from Eq. (2.1) in (Umarov, Tsallis, Steinberg, 2008) 
+        available at https://link.springer.com/article/10.1007/s00032-008-0087-y
+        """
+        Gq =  A * np.sqrt(beta) / self._Cq(q) * self._eq(-beta*(x - mu)**2, q) + C
+        return Gq
+    
+    
+    def fit_Q_Gaussian(self, x_data, y_data, q0 = 1.4):
+        """
+        Fits Q-Gaussian to x- and y-data (numpy arrays)
+        Parameters: q0 (starting guess)
+        
+        Returns fitted parameters poptq and fit errors poptqe
+        """
+    
+        # Test Gaussian fit for the first guess
+        popt = self.fit_Gaussian(x_data, y_data) # gives A, mu, sigma, offset
+        p0 = [popt[1], q0, 1/popt[2]**2/(5-3*q0), 2*popt[0], popt[3]] # mu, q, beta, A, offset
+    
+        #min_bounds = (-np.inf, -np.inf, 0.0, -np.inf, -np.inf,-np.inf)
+        #max_bounds = (np.inf, 3.0, np.inf, np.inf, np.inf, np.inf)
+    
+        try:
+            poptq, pcovq = curve_fit(self.Q_Gaussian, x_data, y_data, p0)
+            poptqe = np.sqrt(np.diag(pcovq))
+        except (RuntimeError, ValueError):
+            poptq = np.nan * np.ones(len(p0))
+            
+        return poptq
 
 
 class FBCT(SPS):
@@ -358,13 +423,16 @@ class WS(SPS):
                                                        plane = 'X', 
                                                        ws_set='Set1',
                                                        no_profiles=0,
-                                                       figname=None
+                                                       figname=None,
+                                                       also_fit_Q_Gaussian=False
                                                        ): 
             """ Fit Gaussian to WS data
                 Parameters: 
                     plane ('X' or 'Y')
                     which scan: 'Set1' (INSCAN) or 'Set2' (OUTSCAN)
                     no_profiles: how many bunch profiles to include (first X nr of bunches) - default all (0)
+                    figname: name of figure
+                    also_fit_Q_Gaussian: whether also to fit and return a Q-Gaussian to the profiles (default False)
             """
             # Read data
             data = self.data_X if plane=='X' else self.data_Y
@@ -399,6 +467,10 @@ class WS(SPS):
             popts = np.zeros([no_bunches, 4])
             n_emittances, sigmas_raw = np.zeros(no_bunches), np.zeros(no_bunches)
             
+            # Also initiate array for Q-Gaussian
+            if also_fit_Q_Gaussian:
+                popts_Q = np.zeros([no_bunches, 5])
+            
             print('Scanning {} FIRST BUNCHES\n'.format(no_bunches))
             for i in range(no_bunches):
            
@@ -410,8 +482,13 @@ class WS(SPS):
                     print('\nALL PHOTOMULTIPLIERS SELECTED - BETTER ONLY WITH ONE!\n')
                     return
 
+                # Fit Gaussian and Q-Gaussian if desired 
                 popt = self.fit_Gaussian(pos, profile_data)
                 popts[i, :] = popt
+                if also_fit_Q_Gaussian:
+                    print('Trying to fit Q-Gaussian...')
+                    popt_Q = self.fit_Q_Gaussian(pos, profile_data)
+                    popts_Q[i, :] = popt_Q
                 
                 # Calculate the emittance from beam paramters 
                 beta_func = betx if plane == 'X' else bety
@@ -428,6 +505,8 @@ class WS(SPS):
                 ax.plot(pos, profile_data, 'b-', label='Data index {}'.format(index[i]))
                 ax.set_xlim(-30, 30)
                 ax.plot(pos, self.Gaussian(pos, *popt), 'r-', label='Fit index {}'.format(index[i]))
+                if also_fit_Q_Gaussian:
+                    ax.plot(pos, self.Q_Gaussian(pos, *popt_Q), color='lime', ls='--', label='Q-Gaussian Fit index {}'.format(index[i]))
             
             en_bar = np.mean(n_emittances)
             spread = np.std(n_emittances)
@@ -437,10 +516,16 @@ class WS(SPS):
             ax.text(0.02, 0.8, 'Plane {} average: \n$\epsilon^n$ = {:.3f} +/- {:.3f} $\mu$m rad'.format(plane, 1e6 * en_bar, 1e6 * spread), fontsize=14, transform=ax.transAxes)
             ax.text(0.78, 0.14, 'InScan {}:\nctime = {:.2f} s'.format(plane, ctime_s),
                                                                             fontsize=11,transform=ax.transAxes)
-
+            if also_fit_Q_Gaussian:
+                Q_values = popts_Q[:, 1]
+                Q_values = Q_values[~np.isnan(Q_values)]  # remove nan values
+                ax.text(0.02, 0.49, 'q-value average: \n{:.3f} +/- {:.3f}'.format(np.mean(Q_values), np.std(Q_values)), fontsize=13, transform=ax.transAxes)
             ax.set_xlabel('Position (mm)')
             ax.set_ylabel('Amplitude (a.u.)')    
             figure.tight_layout(pad=0.4, w_pad=0.5, h_pad=1.0)
             
-            return figure, n_emittances, sigmas_raw, self.acqTime[plane], ctime_s
+            if also_fit_Q_Gaussian:
+                return figure, n_emittances, sigmas_raw, self.acqTime[plane], ctime_s, Q_values
+            else:
+                return figure, n_emittances, sigmas_raw, self.acqTime[plane], ctime_s
      
