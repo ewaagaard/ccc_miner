@@ -26,7 +26,7 @@ The `SPS` is a parent class, located in `ccc_miner/sps`, from which all device c
 - `WS` (Wire Scanner) to measure beam sizes and emittance
 - `FBCT` (Fast BCT) to measure beam intensity for each bunch along the cycle
 
-#### Wire scanners 
+### Wire scanners 
 
 The method `ws.fit_Gaussian_To_and_Plot_Relevant_Profiles()` (default plane is `X`) fits a Gaussian to all beam profiles above a given amplitude threshold. An example to process wire scanner data is located in `ccc_miner/tests/test_sps_ws.py`. Given a path to a raw parquet file from the SPS Wire Scanner, the `ccc_miner` provides tools to process the data, fit Gaussian beam profiles and extract beam emittances: 
 ```
@@ -34,7 +34,7 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 from ccc_miner import WS
 
-# Test data location 
+# Specify data location (wherever files are located) - use the Path library 
 data_folder = Path(__file__).resolve().parent.joinpath('../data').absolute()
 
 # Test data corresponds to this logbook entry:
@@ -44,7 +44,7 @@ parquet_file = '{}/test_data/WS_2023.09.22.16.08.02.376100.parquet'.format(data_
 # Instantiate class 
 ws = WS(parquet_file)
 
-# First test 
+# Retrieve emittances, beam sizes and figures (default is X plane) 
 figure_X, n_emittances_X, sigmas_raw_X, acqTime = ws.fit_Gaussian_To_and_Plot_Relevant_Profiles() 
 figure_Y, n_emittances_Y, sigmas_raw_Y, acqTime = ws.fit_Gaussian_To_and_Plot_Relevant_Profiles(plane='Y') 
 plt.show()
@@ -52,7 +52,14 @@ plt.show()
 
 ![image](https://github.com/ewaagaard/ccc_miner/assets/68541324/dd40a3e7-387c-4777-81fc-80e7508ca11e)
 
-#### Fast BCT 
+For every parquet file from the wire scanner, there is also the option to fit a [Q-Gaussian](https://en.wikipedia.org/wiki/Q-Gaussian_distribution) to investigate how many particles that are contained in the tails. Setting `also_fit_Q_Gaussian=True` generates Q-Gaussian fits in green and the average Q-values. 
+```
+figure_X, n_emittances_X, sigmas_raw_X, acqTime, Q_values = ws.fit_Gaussian_To_and_Plot_Relevant_Profiles(also_fit_Q_Gaussian=True)
+```
+![2023 10 16 10 59 19 964739_X](https://github.com/ewaagaard/ccc_miner/assets/68541324/1e0883e7-d477-45cc-b955-a261dcf27c0b)
+
+
+### Fast BCT 
 
 The Fast Beam Current Transformer (BCT) records bunch-by-bunch data of all batches injected in the SPS, for each 25 ns slot (bucket), across the cycle. The `FBCT(parquet_file)` takes the raw parquet file as input and can plot the intensity over cycle time simply using the `FBCT.plot()` method. 
 ```
@@ -72,5 +79,32 @@ fbct.plot()
 
 ![image](https://github.com/ewaagaard/ccc_miner/assets/68541324/ac2cb799-9a34-48c0-aad0-5ea5a9238851)
 
+
+### Data analysis class for wire scanners and FBCT 
+
+Data anlysis classes contained in the module `ccc_miner.data_analysis` provide automatic analysis processes for a given directory of parquet files from the Wire Scanner or FBCT. Dictionaries `full_data` are returned, containing data on emittances, cycle times, acquisition time stamp, intensitities, and so on. They are also saved as json files in a specified output location.  
+
+```
+import numpy as np
+from ccc_miner import Analyze_WireScanners, Analyze_FBCT_data
+
+# Provide selector array of which wire scanner bunches to study 
+no_bunches = 4
+selector = np.arange(no_bunches)
+output_path = 'Output'
+
+WS = Analyze_WireScanners(folderpath_WS, no_bunches)
+full_data_WS = WS.plot_and_save_all_WS_emittances(output, also_fit_Q_Gaussian=True)
+fig = WS.plot_emittance_over_cycleTime(output_path)
+
+# Analyze FBCT data, then make plots of bunch intensity over cycle time from the produced json file,
+# Among all files in the dictionary, select representative index if desired (if not specified take average of all)
+FBCT = Analyze_FBCT_data(folderpath_FBCT)
+full_data_FBCT = FBCT.plot_and_save_all_bunches_FBCT(output_path, selector)
+fig2, ctime, Nb = FBCT.plot_avg_intensity_over_cycleTime(output_path, run_index = 4)
+```
+![WS_emittances_from_class_SPS_long_flat_bottom_16_10_2023](https://github.com/ewaagaard/ccc_miner/assets/68541324/50875882-bb36-438b-90ef-a84c850f0d80)
+
+![Avg_Bunch_intensity_SPS_long_flat_bottom_16_10_2023](https://github.com/ewaagaard/ccc_miner/assets/68541324/6eb65a56-3aa1-4a3e-9712-fe0c7fb837c4)
 
 
