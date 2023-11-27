@@ -4,6 +4,8 @@
 
 Software modules to extract and process data from SPS, PS and LEIR from the CERN Control Center (CCC). The `ccc_miner` contains a class for each accelerator, for now only SPS (under construction). The module for each accelerator contains classes for each device used to measure beam parameters for the respective machine, including wire scanners (WS), Beam Current Transformers (BCT), tomoscopes, etc. 
 
+Based on previous work from Hannes Bartosik and Tirsi Prebibaj. 
+
 ### Quick set-up
 
 When using Python for scientific computing, it is important to be aware of dependencies and compatibility of different packages. This guide gives a good explanation: [Python dependency manager guide](https://aaltoscicomp.github.io/python-for-scicomp/dependencies/#dependency-management). An isolated environment allows installing packages without affecting the rest of your operating system or any other projects. A useful resource to handle virtual environments is [Anaconda](https://www.anaconda.com/) (or its lighter version Miniconda), when once installed has many useful commands of which many can be found in the [Conda cheat sheet](https://docs.conda.io/projects/conda/en/4.6.0/_downloads/52a95608c49671267e40c689e0bc00ca/conda-cheatsheet.pdf) 
