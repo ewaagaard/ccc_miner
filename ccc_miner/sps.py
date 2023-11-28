@@ -518,7 +518,7 @@ class WS(SPS):
                                                                             fontsize=11,transform=ax.transAxes)
             if also_fit_Q_Gaussian:
                 Q_values = popts_Q[:, 1]
-                Q_values = Q_values[~np.isnan(Q_values)]  # remove nan values
+                #Q_values = Q_values[~np.isnan(Q_values)]  # remove nan values
                 ax.text(0.02, 0.49, 'q-value average: \n{:.3f} +/- {:.3f}'.format(np.mean(Q_values), np.std(Q_values)), fontsize=13, transform=ax.transAxes)
             ax.set_xlabel('Position (mm)')
             ax.set_ylabel('Amplitude (a.u.)')    
