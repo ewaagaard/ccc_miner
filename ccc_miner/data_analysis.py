@@ -375,6 +375,7 @@ class Analyze_FBCT_data:
         
         # For plotting, select representative run 
         index = run_index if run_index is not None else 1
+        print('\nUTC time stamp of data is {}\n'.format(full_data['UTC_timestamp'][index]))
         Nb = full_data['Bunch_intensities'][index]
         Nb_spread = np.std(full_data['Bunch_intensities'][index], axis=1)
         ctime = np.array(full_data['Ctime'][index])[start_ind:]
