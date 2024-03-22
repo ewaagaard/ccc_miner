@@ -323,6 +323,7 @@ class Analyze_FBCT_data:
                         fbct = FBCT(dirpath + '/' + f)
                         fig = fbct.plot_selected_bunches(bunch_selector, figname = f +' BCT')
                         fig.savefig('{}/FBCT_plots/{}.png'.format(output_dest, os.path.splitext(f)[0]), dpi=250)
+                        plt.close()
                         
                         # Append the data 
                         intensities = fbct.get_intensity_per_bunch(bunch_selector)
