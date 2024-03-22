@@ -343,6 +343,31 @@ class Analyze_FBCT_data:
         return full_data
                     
     
+    def iterate_parquet_files_and_plot_bunches(self, output_dest='Output'):
+    
+
+        # If string is not empty, check if directory exists 
+        #if not output_dest:
+        os.makedirs(output_dest, exist_ok=True)
+        os.makedirs(output_dest + '/FBCT_plots_bunches_over_buckets', exist_ok=True)
+    
+        # Walk through data directory 
+        for dirpath, dnames, fnames in os.walk(self.folder):
+            for f in fnames:
+                if f.endswith(".parquet"):
+    
+                    # Instantiate class, try to load parquet file
+                    try:
+                        print('\nOpening {}'.format(dirpath + '/' + f))
+                        fbct = FBCT(dirpath + '/' + f)
+                        fig = fbct.plot()
+                        fig.savefig('{}/FBCT_plots_bunches_over_buckets/{}.png'.format(output_dest, os.path.splitext(f)[0]), dpi=250)
+                        plt.close()
+                        
+                    except (TypeError, KeyError, AttributeError) as e:
+                        print('Did not find FBCT data in {}'.format(f))                    
+    
+    
     def return_full_dict(self, input_dest=''):
         """
         Loads json file and returns dictionary, with timestamps

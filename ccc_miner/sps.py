@@ -197,7 +197,7 @@ class FBCT(SPS):
             data = pq.read_table(parquet_file).to_pydict()
             self.d =  data[self.fBCT_device][0]['value']
             
-        def plot(self):
+        def plot(self, show_plot=False):
             """Generate figure showing intensity per bunch over cycle"""
             figure, axs = self.createSubplots('fBCT', 2)  
 
@@ -228,8 +228,10 @@ class FBCT(SPS):
             self.axs[1].set_xlabel('25 ns slot')
             self.axs[1].set_ylabel('Intensity')
             figure.tight_layout(pad=0.4, w_pad=0.5, h_pad=1.0)
-            plt.show()
-      
+            if show_plot:
+                plt.show()
+            return figure
+        
 
         def get_intensity_per_bunch(self, selector=None):
             """
