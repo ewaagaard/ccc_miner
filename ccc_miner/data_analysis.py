@@ -263,10 +263,23 @@ class Analyze_WireScanners():
         Loads json dict and plots average q-values
         Returns: figure
         """
+        plt.rcParams.update(
+            {
+                "font.family": "serif",
+                "font.size": 20,
+                "axes.titlesize": 22,
+                "axes.labelsize": 21,
+                "xtick.labelsize": 19,
+                "ytick.labelsize": 19,
+                "legend.fontsize": 18,
+                "figure.titlesize": 20,
+            }
+        )
+        
         # Load processed WS data
         full_data = self.return_full_dict(input_dest)
         
-        fig, ax = plt.subplots(figsize=(10, 6))
+        fig, ax = plt.subplots(figsize=(8, 5))
         ax.errorbar(full_data['Ctime_X'], np.array(full_data['q_values_X_mean']), yerr= np.std(full_data['q_values_X'], axis=1), fmt="o", color='teal', label="X")
         ax.errorbar(full_data['Ctime_Y'], np.array(full_data['q_values_Y_mean']), yerr=np.std(full_data['q_values_Y'], axis=1), fmt="o", color='magenta', label="Y")
         ax.set_ylabel("$q$-value")
@@ -275,7 +288,7 @@ class Analyze_WireScanners():
             ax.set_xlim(0, xlim)
         if ylim is not None:
             ax.set_ylim(0.6, ylim)
-        ax.legend(loc=2)
+        ax.legend(loc='upper right')
         fig.tight_layout(pad=0.4, w_pad=0.5, h_pad=1.0)
         return fig
     
