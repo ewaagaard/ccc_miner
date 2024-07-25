@@ -25,15 +25,15 @@ class SPS():
     """
     
     def __init__(self,
+                 use_ions=True,
                  fBCT_device = 'SPS.BCTW.31931/Acquisition',
-                 WS_device_H = 'SPS.BWS.41677.H/Acquisition',
-                 WS_device_V = 'SPS.BWS.41678.V/Acquisition',
+                 WS_device_H = 'SPS.BWS.51637.H/Acquisition', # in 2023 we used #'SPS.BWS.41677.H/Acquisition',
+                 WS_device_V = 'SPS.BWS.41677.V/Acquisition', # in 2023 we used #'SPS.BWS.41678.V/Acquisition',
                  stride = 5
                  ):
         self.fBCT_device = fBCT_device
         self.WS_device_H = WS_device_H
         self.WS_device_V = WS_device_V
-        self.dpp = 1e-3
         
         # Plot settings
         self._nrows = 1
@@ -277,11 +277,14 @@ class WS(SPS):
         """
         def __init__(self, 
                      parquet_file,
+                     use_ions=True,
                      ):  
             super().__init__()  # instantiate SPS class
             
             # Load data
+            self.use_ions = use_ions
             self.load_X_Y_data(parquet_file)
+            self.dpp = 1e-3 if use_ions else 1.8e-3
             
         def beta(self, gamma):
             """Convert relativistic gamma factor to beta factor"""
@@ -291,8 +294,10 @@ class WS(SPS):
         def optics_at_WS(self):
             """Reads betx, bety and dx from json file if exists """
             try:
-                f = open('{}/SPS_WS_optics.json'.format(seq_folder))
+                optics_str = '_ions' if self.use_ions else '_protons_Q26' # 2024 update, if old 2023 values use no string at all
+                f = open('{}/SPS_WS_optics{}.json'.format(seq_folder, optics_str))
                 optics_dict = json.load(f)
+                print('Optics with use ions = {}: {}'.format(self.use_ions, optics_dict))
                 return optics_dict['betx'], optics_dict['bety'], optics_dict['dx'] 
             except FileNotFoundError:
                 print('Optics file not found: need to run find_WS_optics module in data folder first!')
@@ -493,10 +498,14 @@ class WS(SPS):
                     popts_Q[i, :] = popt_Q
                 
                 # Calculate the emittance from beam paramters 
-                beta_func = betx if plane == 'X' else bety
                 ctime_s = self.acqTimeinCycleX_inScan/1e3 if plane == 'X' else self.acqTimeinCycleY_inScan/1e3
                 sigma_raw = popts[i, 2] / 1e3 # in m
-                sigma_betatronic = np.sqrt((sigma_raw)**2 - (self.dpp * dx)**2)
+                if plane == 'X':
+                    beta_func = betx
+                    sigma_betatronic = np.sqrt((sigma_raw)**2 - (self.dpp * dx)**2)
+                else:
+                    beta_func = bety 
+                    sigma_betatronic = np.sqrt((sigma_raw))**2 # no vertical dispersion
                 emittance = sigma_betatronic**2 / beta_func 
                 nemittance = emittance * self.beta(self.gamma) * self.gamma 
                 sigmas_raw[i] = sigma_raw
