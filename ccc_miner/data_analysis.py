@@ -245,8 +245,10 @@ class Analyze_WireScanners():
         full_data = self.return_full_dict(input_dest)
         
         fig, ax = plt.subplots(figsize=(10, 6))
-        ax.errorbar(full_data['Ctime_X'], 1e6 * np.array(full_data['N_avg_emitX']), yerr=1e6 * np.std(full_data['N_emittances_X'], axis=1), fmt="o", label="Hor. Emittance")
-        ax.errorbar(full_data['Ctime_Y'], 1e6 * np.array(full_data['N_avg_emitY']), yerr=1e6 * np.std(full_data['N_emittances_Y'], axis=1), fmt="o", label="Ver. Emittance")
+        ax.errorbar(full_data['Ctime_X'], 1e6 * np.array(full_data['N_avg_emitX']), 
+                    yerr=1e6 * np.array([np.std(x) for x in full_data['N_emittances_X']]), fmt="o", label="Hor. Emittance")
+        ax.errorbar(full_data['Ctime_Y'], 1e6 * np.array(full_data['N_avg_emitY']), 
+                    yerr=1e6 * np.array([np.std(x) for x in full_data['N_emittances_Y']]), fmt="o", label="Ver. Emittance")
         ax.set_ylabel("$\epsilon_{x,y}$ [$\mu$m rad]")
         ax.set_xlabel("Cycle time [s]")
         if xlim is not None:
