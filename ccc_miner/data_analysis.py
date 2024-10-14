@@ -76,11 +76,11 @@ class Analyze_WireScanners():
                             # Append data if not all NaN
                             if not np.isnan(n_emittances_X).all():
                                 full_data['UTC_timestamp_X'].append(timestamp_X)
-                                full_data['N_emittances_X'].append(n_emittances_X.tolist())
+                                full_data['N_emittances_X'].append(n_emittances_X)
                                 full_data['N_avg_emitX'].append(np.mean(n_emittances_X))
                                 full_data['Ctime_X'].append(ctime_X)
                                 if also_fit_Q_Gaussian:
-                                    full_data['q_values_X'].append(Q_values_X.tolist())
+                                    full_data['q_values_X'].append(Q_values_X)
                                     full_data['q_values_X_mean'].append(np.mean(Q_values_X))
                             
                         except TypeError:
@@ -100,11 +100,11 @@ class Analyze_WireScanners():
                             # Append data if not all NaN
                             if not np.isnan(n_emittances_Y).all():
                                 full_data['UTC_timestamp_Y'].append(timestamp_Y)
-                                full_data['N_emittances_Y'].append(n_emittances_Y.tolist())
+                                full_data['N_emittances_Y'].append(n_emittances_Y)
                                 full_data['N_avg_emitY'].append(np.mean(n_emittances_Y))
                                 full_data['Ctime_Y'].append(ctime_Y)
                                 if also_fit_Q_Gaussian:
-                                    full_data['q_values_Y'].append(Q_values_Y.tolist())
+                                    full_data['q_values_Y'].append(Q_values_Y)
                                     full_data['q_values_Y_mean'].append(np.mean(Q_values_Y))
                             
                         except TypeError:
@@ -155,7 +155,7 @@ class Analyze_WireScanners():
                     # Append data if not all NaN
                     if not np.isnan(n_emittances_X).all():
                         full_data['UTC_timestamp_X'].append(timestamp_X)
-                        full_data['N_emittances_X'].append(n_emittances_X.tolist())
+                        full_data['N_emittances_X'].append(n_emittances_X)
                         full_data['N_avg_emitX'].append(np.mean(n_emittances_X))
                         full_data['Ctime_X'].append(ctime_X)
                     
@@ -171,7 +171,7 @@ class Analyze_WireScanners():
                     # Append data if not all NaN
                     if not np.isnan(n_emittances_Y).all():
                         full_data['UTC_timestamp_Y'].append(timestamp_Y)
-                        full_data['N_emittances_Y'].append(n_emittances_Y.tolist())
+                        full_data['N_emittances_Y'].append(n_emittances_Y)
                         full_data['N_avg_emitY'].append(np.mean(n_emittances_Y))
                         full_data['Ctime_Y'].append(ctime_Y)
                     

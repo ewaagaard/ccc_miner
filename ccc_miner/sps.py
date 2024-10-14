@@ -380,7 +380,8 @@ class WS(SPS):
         def extract_Meaningful_Bunches_profiles(self, data, 
                                                 ws_set='Set1',
                                                 min_integral_fraction=0.5,
-                                                amplitude_threshold=1200,
+                                                amplitude_threshold=650,#1200,
+                                                max_number_of_bunches=14*4,
                                                 ):
             """ 
             Get all WS profiles and positions from chosen PM, only focus on the meaningful ones
@@ -399,10 +400,11 @@ class WS(SPS):
             # Extract the single-PM chosen bunches
             profile_position_all_bunches, profile_data_all_bunches = self.getSingle_PM_ProfileData(data, ws_set)
             
-            # Select profiles whose amplitude reading are above the threshoold
+            # Select profiles whose amplitude reading are above the threshoold - and below max number of bunches
             relevant_profiles, relevant_profile_positions, integral_values, index = [], [], [], []
+            count = 0
             for i, profile in enumerate(profile_data_all_bunches):         
-                 if np.max(profile) >= amplitude_threshold:
+                 if np.max(profile) >= amplitude_threshold and count < max_number_of_bunches:
                      
                      # The peak above amplitude threshold, shift profile to zero-level to calculate integral
                      profile_shifted = profile + np.abs(np.min(profile)) if np.min(profile) < 0 else profile
@@ -411,6 +413,7 @@ class WS(SPS):
                      relevant_profiles.append(profile)
                      relevant_profile_positions.append(profile_position_all_bunches[i])
                      index.append(i)
+                     count += 1
             if not relevant_profiles:
                 print('\n\nNO RELEVANT PROFILES ABOVE NOISE THRESHOLD EXTRACTED!\n\n')
                 pass
@@ -485,12 +488,12 @@ class WS(SPS):
                 return
             
             # Initialize empty arrays
-            popts = np.zeros([no_bunches, 4])
-            n_emittances, sigmas_raw = np.zeros(no_bunches), np.zeros(no_bunches)
+            popts = [] #np.zeros([no_bunches, 4])
+            n_emittances, sigmas_raw = [], [] # previously "np.zeros(no_bunches), np.zeros(no_bunches)", but want to exclude nan values
             
             # Also initiate array for Q-Gaussian
             if also_fit_Q_Gaussian:
-                popts_Q = np.zeros([no_bunches, 5])
+                popts_Q = [] # np.zeros([no_bunches, 5])
             
             print('Scanning {} FIRST BUNCHES\n'.format(no_bunches))
             for i in range(no_bunches):
@@ -503,35 +506,48 @@ class WS(SPS):
                 
                 # Check such that the profile data is not mismatching the position data
                 if self.pmtSelection == 5:  # "PM_ALL" --> all photomultipliers selected 
-                    print('\nALL PHOTOMULTIPLIERS SELECTED - SELECT PM1!\n')
-                    profile_data = profile_data[:len(pos)]
-                    #self.pmtSelection = 1
+                    # Find where peak is, select this value
+                    profile_data_allPM = profile_data.copy()
+                    pm_set_index = int(np.floor(np.argmax(profile_data_allPM) / len(pos)))
+                    interval = np.arange(len(pos)) + len(pos) * pm_set_index
+                    print('ALL PHOTOMULTIPLIERS SELECTED - BEST PM with max: {}'.format(pm_set_index+1))
+                    profile_data = profile_data[interval]
 
                 # Fit Gaussian and Q-Gaussian if desired 
                 popt = self.fit_Gaussian(pos, profile_data)
-                popts[i, :] = popt
-                if also_fit_Q_Gaussian:
-                    print('Trying to fit Q-Gaussian...')
-                    popt_Q = self.fit_Q_Gaussian(pos, profile_data)
-                    popts_Q[i, :] = popt_Q
                 
                 # Calculate the emittance from beam paramters 
                 beta_func = betx if plane == 'X' else bety
                 ctime_s = self.acqTimeinCycleX_inScan/1e3 if plane == 'X' else self.acqTimeinCycleY_inScan/1e3
-                sigma_raw = popts[i, 2] / 1e3 # in m
+                sigma_raw = np.abs(popt[2]) / 1e3 # in m
                 sigma_betatronic = np.sqrt((sigma_raw)**2 - (self.dpp * dx)**2)
                 emittance = sigma_betatronic**2 / beta_func 
                 nemittance = emittance * self.beta(self.gamma) * self.gamma 
-                sigmas_raw[i] = sigma_raw
-                n_emittances[i] = nemittance
+                
+                # Check if fit succeeded
+                fit_failed = np.isnan(sigma_betatronic)
+                
+                if not fit_failed:
+                    popts.append(popt)
+                
+                if also_fit_Q_Gaussian:
+                    print('Trying to fit Q-Gaussian...')
+                    popt_Q = self.fit_Q_Gaussian(pos, profile_data)
+                    if not np.isnan(popt_Q[1]):
+                        popts_Q.append(popt_Q)                
+                
+                if not fit_failed:
+                    sigmas_raw.append(sigma_raw)
+                    n_emittances.append(nemittance)
                 print('Bunch {}: Sigma = {:.3f} mm, n_emittance = {:.4f} um rad\n'.format(i+1, 1e3 * sigma_betatronic, 1e6 * nemittance))
                 
                 # Plot the data and the fitted curve
-                ax.plot(pos, profile_data, 'b-', label='Data index {}'.format(index[i]))
-                ax.set_xlim(-30, 30)
-                ax.plot(pos, self.Gaussian(pos, *popt), 'r-', label='Fit index {}'.format(index[i]))
-                if also_fit_Q_Gaussian:
-                    ax.plot(pos, self.Q_Gaussian(pos, *popt_Q), color='lime', ls='--', label='Q-Gaussian Fit index {}'.format(index[i]))
+                if not fit_failed:
+                    ax.plot(pos, profile_data, 'b-', label='Data index {}'.format(index[i]))
+                    ax.set_xlim(-30, 30)
+                    ax.plot(pos, self.Gaussian(pos, *popt), 'r-', label='Fit index {}'.format(index[i]))
+                    if also_fit_Q_Gaussian:
+                        ax.plot(pos, self.Q_Gaussian(pos, *popt_Q), color='lime', ls='--', label='Q-Gaussian Fit index {}'.format(index[i]))
             
             en_bar = np.mean(n_emittances)
             spread = np.std(n_emittances)
@@ -542,7 +558,7 @@ class WS(SPS):
             ax.text(0.78, 0.14, 'InScan {}:\nctime = {:.2f} s'.format(plane, ctime_s),
                                                                             fontsize=11,transform=ax.transAxes)
             if also_fit_Q_Gaussian:
-                Q_values = popts_Q[:, 1]
+                Q_values = np.array(popts_Q)[:, 1]
                 #Q_values = Q_values[~np.isnan(Q_values)]  # remove nan values
                 ax.text(0.02, 0.49, 'q-value average: \n{:.3f} +/- {:.3f}'.format(np.mean(Q_values), np.std(Q_values)), fontsize=13, transform=ax.transAxes)
             ax.set_xlabel('Position (mm)')
