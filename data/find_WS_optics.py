@@ -41,4 +41,4 @@ if __name__ == "__main__":
 
 
     with open('{}/SPS_WS_optics.json'.format(seq_folder), 'w') as fp:
-        json.dump(optics, fp)
+        json.dump(device_optics, fp)
