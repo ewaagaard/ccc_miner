@@ -45,6 +45,14 @@ class SPS():
         self._sharey = False
         self.cmap = 'Spectral'
         self.stride = stride
+        
+        # FBCT filling pattern - injection time in seconds for all 4 * 14 bunches injected
+        self.inj_times_all = np.reshape(np.array([0., 0., 0., 0., 3.6, 3.6, 3.6, 3.6, 7.2, 7.2, 7.2, 7.2, 10.8, 10.8, 10.8, 10.8, 
+                                       14.4, 14.4, 14.4, 14.4, 18., 18., 18., 18., 21.6, 21.6, 21.6, 21.6, 25.2, 25.2, 25.2, 25.2, 
+                                       28.8, 28.8, 28.8, 28.8, 32.4, 32.4, 32.4, 32.4, 36., 36., 36., 36., 39.6, 39.6, 39.6, 39.6, 
+                                       43.2, 43.2, 43.2, 43.2, 46.8, 46.8, 46.8, 46.8]), (14, 4))
+        self.inj_times = self.inj_times_all[:, 0]
+
 
     def createSubplots(self, figname, nrows=1, ncols=1, *args, **kwargs):
         """
@@ -380,7 +388,7 @@ class WS(SPS):
         def extract_Meaningful_Bunches_profiles(self, data, 
                                                 ws_set='Set1',
                                                 min_integral_fraction=0.5,
-                                                amplitude_threshold=650,#1200,
+                                                amplitude_threshold=900, #650,#1200,
                                                 max_number_of_bunches=14*4,
                                                 ):
             """ 
@@ -461,11 +469,13 @@ class WS(SPS):
             # Read data
             data = self.data_X if plane=='X' else self.data_Y
             
-            # If all bunches selected, then set much lower amplitude threshhold
-            #if no_profiles==0:
-            #    pos_all, prof_all, index = self.extract_Meaningful_Bunches_profiles(data, ws_set, amplitude_threshold=-150)
-            #else:
-            pos_all, prof_all, index = self.extract_Meaningful_Bunches_profiles(data, ws_set)
+
+            
+            try:
+                pos_all, prof_all, index = self.extract_Meaningful_Bunches_profiles(data, ws_set)
+            except (TypeError, ValueError, KeyError) as e:
+                print('Could not extract data for this timestamp')
+                return
 
             # Initiate figure
             if figname is None:
@@ -570,3 +580,44 @@ class WS(SPS):
             else:
                 return figure, n_emittances, sigmas_raw, self.acqTime[plane], ctime_s
      
+            
+        def plot_emittances_over_injection_time(self):
+            """
+            Based on injection time and filling pattern of 4 times 14 bunches, 
+            generate plot with emittance over injection time from wire scanner data
+            """
+             
+            # Generate figurues of WS and FBCT
+            _, n_emittances_X, sigmas_raw_X, timestamp_X, ctime_X = self.fit_Gaussian_To_and_Plot_Relevant_Profiles(plane='X') 
+            _, n_emittances_Y, sigmas_raw_Y, timestamp_Y, ctime_Y = self.fit_Gaussian_To_and_Plot_Relevant_Profiles(plane='Y') 
+            #fbct.plot()
+            
+            # If not 56 (4*14) bunches, fill in remaining with nans
+            if len(n_emittances_X) != 56:
+                fill_array = np.full(56, np.nan)
+                fill_array[0:len(n_emittances_X)] = n_emittances_X
+                n_emittances_X = fill_array
+            if len(n_emittances_Y) != 56:
+                fill_array = np.full(56, np.nan)
+                fill_array[0:len(n_emittances_Y)] = n_emittances_Y
+                n_emittances_Y = fill_array
+
+            # Check average emittance for each batch - 14 injections in total     
+            ex_batch = np.reshape(n_emittances_X, (14, 4))
+            ey_batch = np.reshape(n_emittances_Y, (14, 4))
+            ex_mean = 1e6 * np.mean(ex_batch, axis=1)  # in um rad
+            ex_std = 1e6 * np.std(ex_batch, axis=1) # in um rad      
+            ey_mean = 1e6 * np.mean(ey_batch, axis=1)  # in um rad
+            ey_std = 1e6 * np.std(ey_batch, axis=1) # in um rad     
+            
+            # Generate figure with emittance X and Y over cycle for first four bunches from 16/10/2023
+            fig, ax = plt.subplots(figsize=(10, 6))
+            ax.errorbar(self.inj_times, ex_mean, yerr=ex_std,  fmt="*", ms=19, color='k', ecolor='aqua', markerfacecolor='aqua', label='$\epsilon_{x}$ - each batch at 48 s')
+            ax.errorbar(self.inj_times, ey_mean, yerr=ey_std,  fmt="*", ms=19, color='k', ecolor='crimson',  markerfacecolor='crimson', label="$\epsilon_{y}$ - each batch at 48 s")
+            ax.set_ylabel("$\epsilon_{x,y}$ [$\mu$m rad]")
+            ax.set_xlabel("Time after injection [s]")
+            #ax.set_xlim(-0.4, 48.2)
+            #ax.set_ylim(0.7, 2.5)
+            ax.legend(loc=2)
+            fig.tight_layout(pad=0.4, w_pad=0.5, h_pad=1.0)
+            plt.show()
