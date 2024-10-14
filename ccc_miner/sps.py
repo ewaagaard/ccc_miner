@@ -31,9 +31,12 @@ class SPS():
                  stride = 5
                  ):
         self.fBCT_device = fBCT_device
-        self.WS_device_H = WS_device_H
-        self.WS_device_V = WS_device_V
         self.dpp = 1e-3
+        
+        # Select correct wire scanner device - will be read from wire scanner data directly
+        #self.WS_device_H = WS_device_H
+        #self.WS_device_V = WS_device_V
+        # OLD WAY DONE FOR 2023 data
         
         # Plot settings
         self._nrows = 1
@@ -291,9 +294,18 @@ class WS(SPS):
         def optics_at_WS(self):
             """Reads betx, bety and dx from json file if exists """
             try:
-                f = open('{}/SPS_WS_optics.json'.format(seq_folder))
-                optics_dict = json.load(f)
-                return optics_dict['betx'], optics_dict['bety'], optics_dict['dx'] 
+                with open('{}/SPS_WS_optics.json'.format(seq_folder)) as f:
+                    optics_dict = json.load(f)
+                
+                # Select correct optics for the relevant wire scanner
+                optics_ws_X = optics_dict[self.WS_device_H[8:13]]
+                optics_ws_Y = optics_dict[self.WS_device_V[8:13]]
+                
+                print('Optics for\n{}\n{}\n'.format(self.WS_device_H, self.WS_device_V))
+                print('Betx = {:.3f}\nBety = {:.3f}\ndx = {:.3f}'.format(optics_ws_X['betx'], optics_ws_Y['bety'], optics_ws_X['dx']))
+                
+                return optics_ws_X['betx'], optics_ws_Y['bety'], optics_ws_X['dx'] 
+            
             except FileNotFoundError:
                 print('Optics file not found: need to run find_WS_optics module in data folder first!')
         
@@ -301,6 +313,13 @@ class WS(SPS):
             # Check beta function
             # Read data from both devices 
             data = pq.read_table(parquet_file).to_pydict()
+            devices = list(data.keys())
+            
+            # Find the correct wire scanner device
+            self.WS_device_H = devices[0]
+            self.WS_device_V = devices[2]
+            print('Selected WS devices:\n{}\n{}'.format(self.WS_device_H, self.WS_device_V))
+            
             self.data_X = data[self.WS_device_H][0]['value']
             self.data_Y = data[self.WS_device_V][0]['value']
             
@@ -440,10 +459,10 @@ class WS(SPS):
             data = self.data_X if plane=='X' else self.data_Y
             
             # If all bunches selected, then set much lower amplitude threshhold
-            if no_profiles==0:
-                pos_all, prof_all, index = self.extract_Meaningful_Bunches_profiles(data, ws_set, amplitude_threshold=-150)
-            else:
-                pos_all, prof_all, index = self.extract_Meaningful_Bunches_profiles(data, ws_set)
+            #if no_profiles==0:
+            #    pos_all, prof_all, index = self.extract_Meaningful_Bunches_profiles(data, ws_set, amplitude_threshold=-150)
+            #else:
+            pos_all, prof_all, index = self.extract_Meaningful_Bunches_profiles(data, ws_set)
 
             # Initiate figure
             if figname is None:
@@ -479,10 +498,14 @@ class WS(SPS):
                 pos = pos_all[i]
                 profile_data = prof_all[i]
                 
+                if i % 20 == 0:
+                    print('Scanning bunch {}'.format(i+1))
+                
                 # Check such that the profile data is not mismatching the position data
                 if self.pmtSelection == 5:  # "PM_ALL" --> all photomultipliers selected 
-                    print('\nALL PHOTOMULTIPLIERS SELECTED - BETTER ONLY WITH ONE!\n')
-                    return
+                    print('\nALL PHOTOMULTIPLIERS SELECTED - SELECT PM1!\n')
+                    profile_data = profile_data[:len(pos)]
+                    #self.pmtSelection = 1
 
                 # Fit Gaussian and Q-Gaussian if desired 
                 popt = self.fit_Gaussian(pos, profile_data)
