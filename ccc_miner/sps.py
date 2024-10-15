@@ -175,7 +175,7 @@ class FBCT(SPS):
         Parameters
             data : raw parquet file 
         """
-        def __init__(self, parquet_file, min_intensity = 150):
+        def __init__(self, parquet_file, min_intensity = 40):
             super().__init__()  # instantiate SPS class
             
             # Load data 
