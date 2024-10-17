@@ -322,6 +322,7 @@ class WS(SPS):
             # Read data from both devices 
             data = pq.read_table(parquet_file).to_pydict()
             devices = list(data.keys())
+            print('\nLoading data - devices available: {}'.format(devices))
             
             # Find the correct wire scanner device
             self.WS_device_H = devices[0]
@@ -381,13 +382,13 @@ class WS(SPS):
             # Extract relevant data
             profile_position_all_bunches = np.array(data['projPosition' + ws_set])
             profile_data_all_bunches = np.array(data['projData' + ws_set]) 
-            
+
             return profile_position_all_bunches, profile_data_all_bunches
             
         
         def extract_Meaningful_Bunches_profiles(self, data, 
                                                 ws_set='Set1',
-                                                min_integral_fraction=0.5,
+                                                min_integral_fraction=0.48,
                                                 amplitude_threshold=900, #650,#1200,
                                                 max_number_of_bunches=14*4,
                                                 ):
@@ -410,24 +411,35 @@ class WS(SPS):
             
             # Select profiles whose amplitude reading are above the threshoold - and below max number of bunches
             relevant_profiles, relevant_profile_positions, integral_values, index = [], [], [], []
-            count = 0
+
             for i, profile in enumerate(profile_data_all_bunches):         
-                 if np.max(profile) >= amplitude_threshold and count < max_number_of_bunches:
-                     
-                     # The peak above amplitude threshold, shift profile to zero-level to calculate integral
-                     profile_shifted = profile + np.abs(np.min(profile)) if np.min(profile) < 0 else profile
-                     integral_values.append(np.trapz(profile_shifted)) 
-                     
-                     relevant_profiles.append(profile)
-                     relevant_profile_positions.append(profile_position_all_bunches[i])
-                     index.append(i)
-                     count += 1
+                    
+                pos = profile_position_all_bunches[i]
+                    
+                # Check such that the profile data is not mismatching the position data
+                if self.pmtSelection == 5:  # "PM_ALL" --> all photomultipliers selected 
+                    # Find where peak is, select this value
+                    profile_data_allPM = profile.copy()
+                    
+                    pm_set_index = int(np.floor(np.argmax(profile_data_allPM) / len(pos)))
+                    interval = np.arange(len(pos)) + len(pos) * pm_set_index
+                    print('ALL PHOTOMULTIPLIERS SELECTED - BEST PM with max: {}'.format(pm_set_index+1))
+                    profile = profile[interval]
+
+                # Calculate integral of profile
+                integral = np.trapz(np.flip(profile), np.flip(pos))
+                integral_values.append(integral) 
+                
+                relevant_profiles.append(profile)
+                relevant_profile_positions.append(pos)
+                index.append(i)
+                
             if not relevant_profiles:
                 print('\n\nNO RELEVANT PROFILES ABOVE NOISE THRESHOLD EXTRACTED!\n\n')
                 pass
             else: 
                 # Calculate the threshold for X% of the maximum integral
-                threshold = max(integral_values) * min_integral_fraction    
+                threshold = np.max(integral_values) * min_integral_fraction    
                 
                 # Select profiles whose integral is above the threshold
                 filtered_profiles = []
@@ -468,8 +480,6 @@ class WS(SPS):
             """
             # Read data
             data = self.data_X if plane=='X' else self.data_Y
-            
-
             
             try:
                 pos_all, prof_all, index = self.extract_Meaningful_Bunches_profiles(data, ws_set)
@@ -514,15 +524,6 @@ class WS(SPS):
                 if i % 20 == 0:
                     print('Scanning bunch {}'.format(i+1))
                 
-                # Check such that the profile data is not mismatching the position data
-                if self.pmtSelection == 5:  # "PM_ALL" --> all photomultipliers selected 
-                    # Find where peak is, select this value
-                    profile_data_allPM = profile_data.copy()
-                    pm_set_index = int(np.floor(np.argmax(profile_data_allPM) / len(pos)))
-                    interval = np.arange(len(pos)) + len(pos) * pm_set_index
-                    print('ALL PHOTOMULTIPLIERS SELECTED - BEST PM with max: {}'.format(pm_set_index+1))
-                    profile_data = profile_data[interval]
-
                 # Fit Gaussian and Q-Gaussian if desired 
                 popt = self.fit_Gaussian(pos, profile_data)
                 
