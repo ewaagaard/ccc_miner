@@ -536,7 +536,7 @@ class WS(SPS):
                 nemittance = emittance * self.beta(self.gamma) * self.gamma 
                 
                 # Check if fit succeeded
-                fit_failed = np.isnan(sigma_betatronic)
+                fit_failed = np.isnan(sigma_betatronic) or nemittance == np.inf
                 
                 if not fit_failed:
                     popts.append(popt)
@@ -596,11 +596,13 @@ class WS(SPS):
             # If not 56 (4*14) bunches, fill in remaining with nans
             if len(n_emittances_X) != 56:
                 fill_array = np.full(56, np.nan)
-                fill_array[0:len(n_emittances_X)] = n_emittances_X
+                fill_ind_X = min(len(n_emittances_X), 56)     
+                fill_array[0:fill_ind_X] = n_emittances_X[:fill_ind_X]
                 n_emittances_X = fill_array
             if len(n_emittances_Y) != 56:
                 fill_array = np.full(56, np.nan)
-                fill_array[0:len(n_emittances_Y)] = n_emittances_Y
+                fill_ind_Y = min(len(n_emittances_Y), 56)                    
+                fill_array[0:fill_ind_Y] = n_emittances_Y[:fill_ind_Y]
                 n_emittances_Y = fill_array
 
             # Check average emittance for each batch - 14 injections in total     
