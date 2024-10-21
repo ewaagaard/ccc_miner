@@ -277,6 +277,35 @@ class FBCT(SPS):
             figure.tight_layout(pad=0.4, w_pad=0.5, h_pad=1.0)
             return figure        
         
+        def plot_bunches_over_injection_time(self, end_time=47.4):
+            "Plot all bunches until specified time, normalized from injection time"
+            
+            ctime = 1e-3*self.measStamp # in seconds 
+            time_ind = np.where(ctime < end_time)[0]
+            ctime = ctime[time_ind]
+            
+            # Select relevant bunch data 
+            bunches_full = self.bunchIntensity[:, self.bunch_index]
+            bunches = bunches_full[time_ind, :]
+            bunch_range = len(bunches[0])
+            
+            # Normalize all bunches to similar starting intensity
+            for i in range(bunch_range):
+                bunches[:, i] *= 1/max(bunches[:, i])
+                
+            # Set starting index for all bunches to be at cycle time = 0
+            
+            # Plot these selected bunches - iterate over bunches
+            figure, ax = self.createSubplots('fbct')
+            
+            # Iterate over all bunches, i.e. columns
+            for i in range(bunch_range):
+                ax.plot(ctime, bunches[:, i])
+                
+            ax.set_ylabel('Bunch intensity')
+            ax.set_xlabel('Cycle time [s]')
+            plt.show()
+
 
 class WS(SPS):
         """
