@@ -277,7 +277,8 @@ class FBCT(SPS):
             figure.tight_layout(pad=0.4, w_pad=0.5, h_pad=1.0)
             return figure        
         
-        def plot_bunches_over_injection_time(self, end_time=47.4, label=None, figure=None, ax=None, ls='-'):
+        def plot_bunches_over_injection_time(self, end_time=47.4, label=None, figure=None, ax=None, ls='-',
+                                             cmap_color='cool', extra_color_bar=False):
             "Plot all bunches until specified time, normalized from injection time"
             
             ctime = 1e-3*self.measStamp # in seconds 
@@ -304,7 +305,7 @@ class FBCT(SPS):
                 bunches_new.append(bunches[:, i][ind_reset])
                 
             # Iterate over all bunches, i.e. columns - plot in varying color
-            cmap = matplotlib.colormaps['cool']
+            cmap = matplotlib.colormaps[cmap_color]
             norm = plt.Normalize(vmin=0, vmax=cycle_starting_time)  # Set up color normalization for the colorbar, with range from 0 to bunch_range
             sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
             sm.set_array([])  # Required to initialize the ScalarMappable, though we won't use its array
@@ -316,8 +317,13 @@ class FBCT(SPS):
                 cbar.set_label('Bunch injection time in cycle [s]', fontsize=17.5)    
                 for l in cbar.ax.yaxis.get_ticklabels():
                     l.set_fontsize(14.5)
-                ax.set_ylabel('Bunch intensity')
+                ax.set_ylabel('Normalized bunch intensity')
                 ax.set_xlabel('Cycle time after inj. [s]')
+            elif extra_color_bar:
+                cbar2 = figure.colorbar(sm, ax=ax)
+                #cbar2.ax.yaxis.set_visible(False)
+                for l in cbar2.ax.yaxis.get_ticklabels():
+                    l.set_fontsize(14.5)
                         
             for i in range(bunch_range):
                 ax.plot(ctimes_new[i], bunches_new[i], color=cmap(i/bunch_range), alpha=0.75, ls=ls, label=label if i==0 else None)
