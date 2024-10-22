@@ -277,7 +277,7 @@ class FBCT(SPS):
             figure.tight_layout(pad=0.4, w_pad=0.5, h_pad=1.0)
             return figure        
         
-        def plot_bunches_over_injection_time(self, end_time=47.4):
+        def plot_bunches_over_injection_time(self, end_time=47.4, label=None, figure=None, ax=None, ls='-'):
             "Plot all bunches until specified time, normalized from injection time"
             
             ctime = 1e-3*self.measStamp # in seconds 
@@ -285,7 +285,7 @@ class FBCT(SPS):
             ctime = ctime[time_ind]
             
             # Select relevant bunch data 
-            bunches_full = self.bunchIntensity[:, self.bunch_index]
+            bunches_full = self.bunchIntensity[:, self.bunch_index] * self.unit 
             bunches = bunches_full[time_ind, :]
             bunch_range = len(bunches[0])
             
@@ -294,17 +294,39 @@ class FBCT(SPS):
                 bunches[:, i] *= 1/max(bunches[:, i])
                 
             # Set starting index for all bunches to be at cycle time = 0
+            # where normalized intensity is above 0.4
+            ctimes_new = []
+            bunches_new = []
+            for i in range(bunch_range):
+                ind_reset = bunches[:, i] > 0.4
+                cycle_starting_time = ctime[ind_reset][0]
+                ctimes_new.append(ctime[ind_reset] - cycle_starting_time)
+                bunches_new.append(bunches[:, i][ind_reset])
+                
+            # Iterate over all bunches, i.e. columns - plot in varying color
+            cmap = matplotlib.colormaps['cool']
+            norm = plt.Normalize(vmin=0, vmax=cycle_starting_time)  # Set up color normalization for the colorbar, with range from 0 to bunch_range
+            sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+            sm.set_array([])  # Required to initialize the ScalarMappable, though we won't use its array
             
             # Plot these selected bunches - iterate over bunches
-            figure, ax = self.createSubplots('fbct')
-            
-            # Iterate over all bunches, i.e. columns
+            if figure is None:
+                figure, ax = self.createSubplots('fbct')
+                cbar = figure.colorbar(sm, ax=ax)
+                cbar.set_label('Bunch injection time in cycle [s]', fontsize=17.5)    
+                for l in cbar.ax.yaxis.get_ticklabels():
+                    l.set_fontsize(14.5)
+                ax.set_ylabel('Bunch intensity')
+                ax.set_xlabel('Cycle time after inj. [s]')
+                        
             for i in range(bunch_range):
-                ax.plot(ctime, bunches[:, i])
+                ax.plot(ctimes_new[i], bunches_new[i], color=cmap(i/bunch_range), alpha=0.75, ls=ls, label=label if i==0 else None)
                 
-            ax.set_ylabel('Bunch intensity')
-            ax.set_xlabel('Cycle time [s]')
-            plt.show()
+            if label is not None:
+                ax.legend()
+            figure.tight_layout()
+                
+            return figure, ax
 
 
 class WS(SPS):
