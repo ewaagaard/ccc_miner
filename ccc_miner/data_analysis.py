@@ -397,6 +397,11 @@ class Analyze_FBCT_data:
             print('\nFILE NOT FOUND - check input path!\n')
             return
         
+        # Convert intensities to numpy arrays
+        full_data['Nb'] = []
+        for Nb in full_data['Bunch_intensities']:
+            full_data['Nb'].append(np.array(Nb).flatten())
+
         # Convert timestamp strings to datetime 
         full_data['Timestamp_datetime'] = pd.to_datetime(full_data['UTC_timestamp'])
 
