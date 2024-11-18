@@ -192,7 +192,8 @@ class FBCT(SPS):
             self.nbOfMeas = self.d['nbOfMeas']
             self.acqTime =  self.d['acqTime']
             self.beamDetected =self.d['beamDetected']
-            
+            print('Acq time: {}'.format(self.acqTime))
+
             # Extract filling index for bunches
             slip_stacking_ind = self.measStamp < 50e3 # point after which slip stacking happens
             
@@ -417,7 +418,12 @@ class WS(SPS):
             self.nBunches = len(data['bunchSelection'])     
             self.acqTimeinCycleX_inScan = self.data_X['acqTimeInCycleSet1'] if exists_X_data else np.nan
             self.acqTimeinCycleY_inScan = self.data_Y['acqTimeInCycleSet1'] if exists_Y_data else np.nan
-            
+            print('WS acq time X: {}'.format(self.acqTimeinCycleX_inScan))
+            print('WS acq time Y: {}'.format(self.acqTimeinCycleY_inScan))
+
+            # Adjust injection times according to measured WS, which happens slightly after each injection
+            self.inj_times = self.inj_times + (self.acqTimeinCycleX_inScan/1e3 - self.inj_times[-1])
+
             # Find relativistic gamma - remove all gamma cycle data points where Y is possibly zero
             gamma_raw_Y = np.array(self.gamma_cycle['Y'], dtype=np.float64)
             gamma_cycle_Y = gamma_raw_Y[np.isnan(gamma_raw_Y) == 0.]
@@ -507,12 +513,14 @@ class WS(SPS):
                         filtered_profiles.append(profile)
                         filtered_profile_positions.append(position)
                         filtered_indices.append(index)
-                
+                print('Relevant profiles appended, with index: {}'.format(filtered_indices))
+
                 if not filtered_profiles:
                     print('\n\nNO RELEVANT PROFILES ABOVE THE INTEGRAL THRESHOLD EXTRACTED!\n\n')
                 
-                # Sort the filtered profiles by their integral values
-                sorted_profiles = sorted(zip(filtered_profiles, filtered_profile_positions, filtered_indices), key=lambda x: np.trapz(x[0]), reverse=True)
+                # Sort the filtered profiles by index - not by integral width! 
+                sorted_profiles = zip(filtered_profiles, filtered_profile_positions, filtered_indices)
+                #sorted_profiles = sorted(zip(filtered_profiles, filtered_profile_positions, filtered_indices), key=lambda x: np.trapz(x[0]), reverse=True) # wrong! 
     
                 # Unzip the sorted profiles into separate lists
                 relevant_profiles, relevant_profile_positions, index = zip(*sorted_profiles)
@@ -574,7 +582,7 @@ class WS(SPS):
             
             print('Scanning {} FIRST BUNCHES\n'.format(no_bunches))
             for i in range(no_bunches):
-           
+                
                 pos = pos_all[i]
                 profile_data = prof_all[i]
                 
@@ -607,7 +615,7 @@ class WS(SPS):
                 if not fit_failed:
                     sigmas_raw.append(sigma_raw)
                     n_emittances.append(nemittance)
-                print('Bunch {}: Sigma = {:.3f} mm, n_emittance = {:.4f} um rad\n'.format(i+1, 1e3 * sigma_betatronic, 1e6 * nemittance))
+                print('Bunch {}: Sigma = {:.3f} mm, n_emittance = {:.4f} um at index {}\n'.format(i+1, 1e3 * sigma_betatronic, 1e6 * nemittance, index[i]))
                 
                 # Plot the data and the fitted curve
                 if not fit_failed:
@@ -669,15 +677,23 @@ class WS(SPS):
             ex_std = 1e6 * np.std(ex_batch, axis=1) # in um rad      
             ey_mean = 1e6 * np.mean(ey_batch, axis=1)  # in um rad
             ey_std = 1e6 * np.std(ey_batch, axis=1) # in um rad     
+
+            # As late indices correspond to early bunches, flip the array
+            ex_std = np.flip(ex_std)
+            ey_std = np.flip(ey_std)
+            ex_mean = np.flip(ex_mean)
+            ey_mean = np.flip(ey_mean)
             
             # Generate figure with emittance X and Y over cycle for first four bunches from 16/10/2023
             fig, ax = plt.subplots(figsize=(10, 6))
             ax.errorbar(self.inj_times, ex_mean, yerr=ex_std,  fmt="*", ms=19, color='k', ecolor='aqua', markerfacecolor='aqua', label='$\epsilon_{x}$ - each batch at 48 s')
             ax.errorbar(self.inj_times, ey_mean, yerr=ey_std,  fmt="*", ms=19, color='k', ecolor='crimson',  markerfacecolor='crimson', label="$\epsilon_{y}$ - each batch at 48 s")
-            ax.set_ylabel("$\epsilon_{x,y}$ [$\mu$m rad]")
+            ax.set_ylabel("$\epsilon_{x,y}^n$ [$\mu$m rad]")
             ax.set_xlabel("Time after injection [s]")
             #ax.set_xlim(-0.4, 48.2)
             #ax.set_ylim(0.7, 2.5)
             ax.legend(loc=2)
             fig.tight_layout(pad=0.4, w_pad=0.5, h_pad=1.0)
-            plt.show()
+            
+            # Also return values for future use
+            return self.inj_times, ex_mean, ex_std, ey_mean, ey_std
