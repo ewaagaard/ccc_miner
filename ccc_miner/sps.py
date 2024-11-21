@@ -47,10 +47,11 @@ class SPS():
         self.stride = stride
         
         # FBCT filling pattern - injection time in seconds for all 4 * 14 bunches injected
-        self.inj_times_all = np.reshape(np.array([0., 0., 0., 0., 3.6, 3.6, 3.6, 3.6, 7.2, 7.2, 7.2, 7.2, 10.8, 10.8, 10.8, 10.8, 
+        self.inj_times_all_flat = np.array([0., 0., 0., 0., 3.6, 3.6, 3.6, 3.6, 7.2, 7.2, 7.2, 7.2, 10.8, 10.8, 10.8, 10.8, 
                                        14.4, 14.4, 14.4, 14.4, 18., 18., 18., 18., 21.6, 21.6, 21.6, 21.6, 25.2, 25.2, 25.2, 25.2, 
                                        28.8, 28.8, 28.8, 28.8, 32.4, 32.4, 32.4, 32.4, 36., 36., 36., 36., 39.6, 39.6, 39.6, 39.6, 
-                                       43.2, 43.2, 43.2, 43.2, 46.8, 46.8, 46.8, 46.8]), (14, 4))
+                                       43.2, 43.2, 43.2, 43.2, 46.8, 46.8, 46.8, 46.8])
+        self.inj_times_all = np.reshape(self.inj_times_all_flat, (14, 4))
         self.inj_times = self.inj_times_all[:, 0]
 
 
@@ -451,8 +452,8 @@ class WS(SPS):
         
         def extract_Meaningful_Bunches_profiles(self, data, 
                                                 ws_set='Set1',
-                                                min_integral_fraction=0.48,
-                                                amplitude_threshold=900, #650,#1200,
+                                                min_integral_fraction=0.38,
+                                                amplitude_threshold=900,
                                                 max_number_of_bunches=14*4,
                                                 ):
             """ 
@@ -533,15 +534,27 @@ class WS(SPS):
                                                        ws_set='Set1',
                                                        no_profiles=0,
                                                        figname=None,
-                                                       also_fit_Q_Gaussian=False
+                                                       also_fit_Q_Gaussian=False,
+                                                       first_bunch_at_index=None,
+                                                       total_expected_bunch_number=None
                                                        ): 
-            """ Fit Gaussian to WS data
-                Parameters: 
-                    plane ('X' or 'Y')
-                    which scan: 'Set1' (INSCAN) or 'Set2' (OUTSCAN)
-                    no_profiles: how many bunch profiles to include (first X nr of bunches) - default all (0)
-                    figname: name of figure
-                    also_fit_Q_Gaussian: whether also to fit and return a Q-Gaussian to the profiles (default False)
+            """ 
+            Fit Gaussian to WS data
+                
+            Parameters: 
+                plane: str ('X' or 'Y')
+                which scan: str
+                    'Set1' (INSCAN) or 'Set2' (OUTSCAN)
+                no_profiles: int 
+                    how many bunch profiles to include (first X nr of bunches) - default all (0)
+                figname: str
+                    name of figure
+                also_fit_Q_Gaussian: bool
+                    whether also to fit and return a Q-Gaussian to the profiles (default False)
+                first_bunch_at_index: int 
+                    at which index the first injection occurs (i.e highest number)
+                total_expected_bunch_number : int
+                    for example, 56 bunches with normal filling scheme
             """
             # Read data
             data = self.data_X if plane=='X' else self.data_Y
@@ -574,7 +587,7 @@ class WS(SPS):
             
             # Initialize empty arrays
             popts = [] #np.zeros([no_bunches, 4])
-            n_emittances, sigmas_raw = [], [] # previously "np.zeros(no_bunches), np.zeros(no_bunches)", but want to exclude nan values
+            n_emittances, sigmas_raw, Q_values_all = [], [], [] # previously "np.zeros(no_bunches), np.zeros(no_bunches)", but want to exclude nan values
             
             # Also initiate array for Q-Gaussian
             if also_fit_Q_Gaussian:
@@ -585,9 +598,6 @@ class WS(SPS):
                 
                 pos = pos_all[i]
                 profile_data = prof_all[i]
-                
-                if i % 20 == 0:
-                    print('Scanning bunch {}'.format(i+1))
                 
                 # Fit Gaussian and Q-Gaussian if desired 
                 popt = self.fit_Gaussian(pos, profile_data)
@@ -606,24 +616,87 @@ class WS(SPS):
                 if not fit_failed:
                     popts.append(popt)
                 
+                print('Plane {}, bunch {}: Sigma = {:.3f} mm, n_emittance = {:.4f} um at index {}'.format(plane, i+1, 1e3 * sigma_betatronic, 1e6 * nemittance, index[i]))
+
                 if also_fit_Q_Gaussian:
-                    print('Trying to fit Q-Gaussian...')
                     popt_Q = self.fit_Q_Gaussian(pos, profile_data)
+                    Q_values_all.append(popt_Q[1])
+                    print('Q-Gaussian fit: q = {:.4f}\n'.format(popt_Q[1]))
                     if not np.isnan(popt_Q[1]):
                         popts_Q.append(popt_Q)                
                 
+                # Plot the data and the fitted curve
                 if not fit_failed:
                     sigmas_raw.append(sigma_raw)
                     n_emittances.append(nemittance)
-                print('Bunch {}: Sigma = {:.3f} mm, n_emittance = {:.4f} um at index {}\n'.format(i+1, 1e3 * sigma_betatronic, 1e6 * nemittance, index[i]))
                 
-                # Plot the data and the fitted curve
-                if not fit_failed:
                     ax.plot(pos, profile_data, 'b-', label='Data index {}'.format(index[i]))
                     ax.set_xlim(-30, 30)
                     ax.plot(pos, self.Gaussian(pos, *popt), 'r-', label='Fit index {}'.format(index[i]))
                     if also_fit_Q_Gaussian:
                         ax.plot(pos, self.Q_Gaussian(pos, *popt_Q), color='lime', ls='--', label='Q-Gaussian Fit index {}'.format(index[i]))
+
+            # If bunch slots are known beforehand, filter these out
+            if first_bunch_at_index is not None:
+                current_index = first_bunch_at_index
+                indices = []
+                for set in range(2):
+                    for batch_num in range(7):
+                        # Generate the numbers for this batch
+                        for i in range(4):  # Each batch has 4 values
+                            indices.append(current_index)
+                            if batch_num<6:
+                                current_index -= 4 if i<3 else 6
+                            else:
+                                current_index -= 4 if i<3 else 0
+                    if set<1:
+                        current_index -= 78
+
+                # Iterate over known filling indices, check if registered +-1 agree
+                n_emittances_filtered = []
+                sigmas_raw_filtered = []
+                Q_values_filtered = []
+                index_filtered = []
+
+                # Convert index to array
+
+                # Iterate over the known filling scheme for 56 bunches
+                for index_known in np.flip(indices):
+                    
+                    # Check if index matches with the known filling index, otherwise check neighbouring buckets
+                    if index_known in index:
+                        match_index = np.where(index == index_known)[0][0]
+                        n_emittances_filtered.append(n_emittances[match_index])
+                        sigmas_raw_filtered.append(sigmas_raw[match_index])
+                        if also_fit_Q_Gaussian:
+                            Q_values_filtered.append(Q_values_all[match_index])
+                        index_filtered.append(index[match_index])
+                    elif (index_known + 1) in index: 
+                        match_index = np.where(index == index_known + 1)[0][0]
+                        n_emittances_filtered.append(n_emittances[match_index])
+                        sigmas_raw_filtered.append(sigmas_raw[match_index])
+                        if also_fit_Q_Gaussian:
+                            Q_values_filtered.append(Q_values_all[match_index])
+                        index_filtered.append(index[match_index])
+                    elif ((index_known - 1) in index):
+                        match_index = np.where(index == index_known - 1)[0][0]
+                        n_emittances_filtered.append(n_emittances[match_index])
+                        sigmas_raw_filtered.append(sigmas_raw[match_index])
+                        if also_fit_Q_Gaussian:
+                            Q_values_filtered.append(Q_values_all[match_index])
+                        index_filtered.append(index[match_index])
+                    else:
+                        n_emittances_filtered.append(np.nan)
+                        sigmas_raw_filtered.append(np.nan)
+                        if also_fit_Q_Gaussian:
+                            Q_values_filtered.append(np.nan)
+
+                print('Filling pattern with len = {}, after filtering:\n{}'.format(len(index_filtered), index_filtered))
+                n_emittances = n_emittances_filtered
+                sigmas_raw = sigmas_raw_filtered
+                index = index_filtered
+                if also_fit_Q_Gaussian:
+                    Q_values = Q_values_filtered
             
             en_bar = np.mean(n_emittances)
             spread = np.std(n_emittances)
@@ -642,9 +715,9 @@ class WS(SPS):
             figure.tight_layout(pad=0.4, w_pad=0.5, h_pad=1.0)
             
             if also_fit_Q_Gaussian:
-                return figure, n_emittances, sigmas_raw, self.acqTime[plane], ctime_s, Q_values
+                return figure, n_emittances, sigmas_raw, self.acqTime[plane], ctime_s, index, Q_values
             else:
-                return figure, n_emittances, sigmas_raw, self.acqTime[plane], ctime_s
+                return figure, n_emittances, sigmas_raw, self.acqTime[plane], ctime_s, index
      
             
         def plot_emittances_over_injection_time(self):
