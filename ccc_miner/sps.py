@@ -587,7 +587,7 @@ class WS(SPS):
             
             # Initialize empty arrays
             popts = [] #np.zeros([no_bunches, 4])
-            n_emittances, sigmas_raw, Q_values_all = [], [], [] # previously "np.zeros(no_bunches), np.zeros(no_bunches)", but want to exclude nan values
+            n_emittances, sigmas_raw, Q_values = [], [], [] # previously "np.zeros(no_bunches), np.zeros(no_bunches)", but want to exclude nan values
             
             # Also initiate array for Q-Gaussian
             if also_fit_Q_Gaussian:
@@ -620,7 +620,7 @@ class WS(SPS):
 
                 if also_fit_Q_Gaussian:
                     popt_Q = self.fit_Q_Gaussian(pos, profile_data)
-                    Q_values_all.append(popt_Q[1])
+                    Q_values.append(popt_Q[1])
                     print('Q-Gaussian fit: q = {:.4f}\n'.format(popt_Q[1]))
                     if not np.isnan(popt_Q[1]):
                         popts_Q.append(popt_Q)                
@@ -651,6 +651,7 @@ class WS(SPS):
                                 current_index -= 4 if i<3 else 0
                     if set<1:
                         current_index -= 78
+                indices = np.array(indices)
 
                 # Iterate over known filling indices, check if registered +-1 agree
                 n_emittances_filtered = []
@@ -669,21 +670,21 @@ class WS(SPS):
                         n_emittances_filtered.append(n_emittances[match_index])
                         sigmas_raw_filtered.append(sigmas_raw[match_index])
                         if also_fit_Q_Gaussian:
-                            Q_values_filtered.append(Q_values_all[match_index])
+                            Q_values_filtered.append(Q_values[match_index])
                         index_filtered.append(index[match_index])
                     elif (index_known + 1) in index: 
                         match_index = np.where(index == index_known + 1)[0][0]
                         n_emittances_filtered.append(n_emittances[match_index])
                         sigmas_raw_filtered.append(sigmas_raw[match_index])
                         if also_fit_Q_Gaussian:
-                            Q_values_filtered.append(Q_values_all[match_index])
+                            Q_values_filtered.append(Q_values[match_index])
                         index_filtered.append(index[match_index])
                     elif ((index_known - 1) in index):
                         match_index = np.where(index == index_known - 1)[0][0]
                         n_emittances_filtered.append(n_emittances[match_index])
                         sigmas_raw_filtered.append(sigmas_raw[match_index])
                         if also_fit_Q_Gaussian:
-                            Q_values_filtered.append(Q_values_all[match_index])
+                            Q_values_filtered.append(Q_values[match_index])
                         index_filtered.append(index[match_index])
                     else:
                         n_emittances_filtered.append(np.nan)
@@ -698,8 +699,8 @@ class WS(SPS):
                 if also_fit_Q_Gaussian:
                     Q_values = Q_values_filtered
             
-            en_bar = np.mean(n_emittances)
-            spread = np.std(n_emittances)
+            en_bar = np.nanmean(n_emittances) # ignore nans in this calculation
+            spread = np.nanstd(n_emittances) # ignore nans in this calculation
             ax.text(0.89, 0.89, plane, fontsize=35, fontweight='bold', transform=ax.transAxes)
             ax.text(0.02, 0.12, '{}: {} profiles'.format(ws_set, no_bunches), fontsize=13, transform=ax.transAxes)
             ax.text(0.02, 0.92, 'UTC timestamp:\n {}'.format(self.acqTime[plane]), fontsize=10, transform=ax.transAxes)
@@ -707,9 +708,7 @@ class WS(SPS):
             ax.text(0.78, 0.14, 'InScan {}:\nctime = {:.2f} s'.format(plane, ctime_s),
                                                                             fontsize=11,transform=ax.transAxes)
             if also_fit_Q_Gaussian:
-                Q_values = np.array(popts_Q)[:, 1]
-                #Q_values = Q_values[~np.isnan(Q_values)]  # remove nan values
-                ax.text(0.02, 0.49, 'q-value average: \n{:.3f} +/- {:.3f}'.format(np.mean(Q_values), np.std(Q_values)), fontsize=13, transform=ax.transAxes)
+                ax.text(0.02, 0.49, 'q-value average: \n{:.3f} +/- {:.3f}'.format(np.nanmean(Q_values), np.nanstd(Q_values)), fontsize=13, transform=ax.transAxes)
             ax.set_xlabel('Position (mm)')
             ax.set_ylabel('Amplitude (a.u.)')    
             figure.tight_layout(pad=0.4, w_pad=0.5, h_pad=1.0)
@@ -720,15 +719,19 @@ class WS(SPS):
                 return figure, n_emittances, sigmas_raw, self.acqTime[plane], ctime_s, index
      
             
-        def plot_emittances_over_injection_time(self):
+        def plot_emittances_over_injection_time(self, first_bunch_at_index=None):
             """
             Based on injection time and filling pattern of 4 times 14 bunches, 
             generate plot with emittance over injection time from wire scanner data
+                
+            Parameters: 
+                total_expected_bunch_number : int
+                    for example, 56 bunches with normal filling scheme
             """
              
             # Generate figurues of WS and FBCT
-            _, n_emittances_X, sigmas_raw_X, timestamp_X, ctime_X = self.fit_Gaussian_To_and_Plot_Relevant_Profiles(plane='X') 
-            _, n_emittances_Y, sigmas_raw_Y, timestamp_Y, ctime_Y = self.fit_Gaussian_To_and_Plot_Relevant_Profiles(plane='Y') 
+            _, n_emittances_X, sigmas_raw_X, timestamp_X, ctime_X, index_x = self.fit_Gaussian_To_and_Plot_Relevant_Profiles(plane='X', first_bunch_at_index=first_bunch_at_index) 
+            _, n_emittances_Y, sigmas_raw_Y, timestamp_Y, ctime_Y, index_y = self.fit_Gaussian_To_and_Plot_Relevant_Profiles(plane='Y', first_bunch_at_index=first_bunch_at_index) 
             #fbct.plot()
             
             # If not 56 (4*14) bunches, fill in remaining with nans
@@ -746,10 +749,10 @@ class WS(SPS):
             # Check average emittance for each batch - 14 injections in total     
             ex_batch = np.reshape(n_emittances_X, (14, 4))
             ey_batch = np.reshape(n_emittances_Y, (14, 4))
-            ex_mean = 1e6 * np.mean(ex_batch, axis=1)  # in um rad
-            ex_std = 1e6 * np.std(ex_batch, axis=1) # in um rad      
-            ey_mean = 1e6 * np.mean(ey_batch, axis=1)  # in um rad
-            ey_std = 1e6 * np.std(ey_batch, axis=1) # in um rad     
+            ex_mean = 1e6 * np.nanmean(ex_batch, axis=1)  # in um rad, ignore nans
+            ex_std = 1e6 * np.nanstd(ex_batch, axis=1) # in um rad, ignore nans      
+            ey_mean = 1e6 * np.nanmean(ey_batch, axis=1)  # in um rad, ignore nans
+            ey_std = 1e6 * np.nanstd(ey_batch, axis=1) # in um rad, ignore nans     
 
             # As late indices correspond to early bunches, flip the array
             ex_std = np.flip(ex_std)
