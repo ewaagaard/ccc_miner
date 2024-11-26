@@ -536,7 +536,9 @@ class WS(SPS):
                                                        figname=None,
                                                        also_fit_Q_Gaussian=False,
                                                        first_bunch_at_index=None,
-                                                       total_expected_bunch_number=None
+                                                       expected_number_of_sets=2,
+                                                       expected_batch_number_per_set=7,
+                                                       expected_bunch_number=4,
                                                        ): 
             """ 
             Fit Gaussian to WS data
@@ -553,8 +555,12 @@ class WS(SPS):
                     whether also to fit and return a Q-Gaussian to the profiles (default False)
                 first_bunch_at_index: int 
                     at which index the first injection occurs (i.e highest number)
-                total_expected_bunch_number : int
-                    for example, 56 bunches with normal filling scheme
+                expected_number_of_sets : int
+                    total number of set of batches, i.e group of batches - normally 2
+                expected_batch_number : int
+                    7 batches per set with normal filling scheme
+                expected_bunch_number : int
+                    4 bunches per batch with normal filling scheme
             """
             # Read data
             data = self.data_X if plane=='X' else self.data_Y
@@ -640,10 +646,10 @@ class WS(SPS):
             if first_bunch_at_index is not None:
                 current_index = first_bunch_at_index
                 indices = []
-                for set in range(2):
-                    for batch_num in range(7):
+                for set in range(expected_number_of_sets):
+                    for batch_num in range(expected_batch_number_per_set):
                         # Generate the numbers for this batch
-                        for i in range(4):  # Each batch has 4 values
+                        for i in range(expected_bunch_number):  # Each batch has 4 values
                             indices.append(current_index)
                             if batch_num<6:
                                 current_index -= 4 if i<3 else 6
