@@ -144,21 +144,23 @@ class SPS():
         return Gq
     
     
-    def fit_Q_Gaussian(self, x_data, y_data, q0 = 1.4):
+    def fit_Q_Gaussian(self, x_data, y_data, q0 = 1.4, p0=None):
         """
         Fits Q-Gaussian to x- and y-data (numpy arrays)
-        Parameters: q0 (starting guess)
+        Parameters: 
+        q0 : float
+            q-value starting guess 
+        p0 : np.ndarray
+            array with starting guesses
         
         Returns fitted parameters poptq and fit errors poptqe
         """
     
         # Test Gaussian fit for the first guess
-        popt = self.fit_Gaussian(x_data, y_data) # gives A, mu, sigma, offset
-        p0 = [popt[1], q0, 1/popt[2]**2/(5-3*q0), 2*popt[0], popt[3]] # mu, q, beta, A, offset
-    
-        #min_bounds = (-np.inf, -np.inf, 0.0, -np.inf, -np.inf,-np.inf)
-        #max_bounds = (np.inf, 3.0, np.inf, np.inf, np.inf, np.inf)
-    
+        if p0 is None:
+            popt = self.fit_Gaussian(x_data, y_data) # gives A, mu, sigma, offset
+            p0 = [popt[1], q0, 1/popt[2]**2/(5-3*q0), 2*popt[0], popt[3]] # mu, q, beta, A, offset
+
         try:
             poptq, pcovq = curve_fit(self.Q_Gaussian, x_data, y_data, p0)
             poptqe = np.sqrt(np.diag(pcovq))
@@ -167,6 +169,25 @@ class SPS():
             
         return poptq
 
+    def get_sigma_RMS_from_qGaussian_fit(self, poptq):
+        """
+        Calculate RMS bunch length sigma_z from Q-Gaussian fits
+
+        Parameters
+        ----------
+        popt_Q : np.ndarray
+            array of fit parameters from fit_Q_Gaussian    
+        
+        Returns
+        -------
+        rms_bunch_length : float
+        """
+        if poptq[1] is not np.nan:
+            q =  poptq[1]
+            beta = poptq[2]
+            return 1./np.sqrt(beta*(5.-3.*q))
+        else:
+            return np.nan
 
 class FBCT(SPS):
         """
@@ -606,13 +627,25 @@ class WS(SPS):
                 profile_data = prof_all[i]
                 
                 # Fit Gaussian and Q-Gaussian if desired 
-                popt = self.fit_Gaussian(pos, profile_data)
-                
+                popt = self.fit_Gaussian(pos, profile_data, p0=(1.0, 0.0, 0.02))
+                q0 = 1.0
+                p0_q = [popt[1], q0, 1/popt[2]**2/(5-3*q0), 2*popt[0]]
+
+                if also_fit_Q_Gaussian:
+                    popt_Q = self.fit_Q_Gaussian(pos, profile_data, p0=p0_q)
+                    Q_values.append(popt_Q[1])
+                    print('Q-Gaussian fit: q = {:.4f}\n'.format(popt_Q[1]))
+                    if not np.isnan(popt_Q[1]):
+                        popts_Q.append(popt_Q) 
+
                 # Calculate the emittance from beam paramters 
                 beta_func = betx if plane == 'X' else bety
                 ctime_s = self.acqTimeinCycleX_inScan/1e3 if plane == 'X' else self.acqTimeinCycleY_inScan/1e3
-                sigma_raw = np.abs(popt[2]) / 1e3 # in m
-                sigma_betatronic = np.sqrt((sigma_raw)**2 - (self.dpp * dx)**2)
+                if also_fit_Q_Gaussian:
+                    sigma_raw = self.get_sigma_RMS_from_qGaussian_fit(popt_Q)
+                else:
+                    sigma_raw = np.abs(popt[2]) / 1e3 # in m
+                sigma_betatronic = np.sqrt((sigma_raw)**2 - (self.dpp * dx)**2) if plane == 'X' else np.abs(sigma_raw)
                 emittance = sigma_betatronic**2 / beta_func 
                 nemittance = emittance * self.beta(self.gamma) * self.gamma 
                 
@@ -622,14 +655,7 @@ class WS(SPS):
                 if not fit_failed:
                     popts.append(popt)
                 
-                print('Plane {}, bunch {}: Sigma = {:.3f} mm, n_emittance = {:.4f} um at index {}'.format(plane, i+1, 1e3 * sigma_betatronic, 1e6 * nemittance, index[i]))
-
-                if also_fit_Q_Gaussian:
-                    popt_Q = self.fit_Q_Gaussian(pos, profile_data)
-                    Q_values.append(popt_Q[1])
-                    print('Q-Gaussian fit: q = {:.4f}\n'.format(popt_Q[1]))
-                    if not np.isnan(popt_Q[1]):
-                        popts_Q.append(popt_Q)                
+                print('Plane {}, bunch {}: Sigma = {:.3f} mm, n_emittance = {:.4f} um at index {}'.format(plane, i+1, 1e3 * sigma_betatronic, 1e6 * nemittance, index[i]))               
                 
                 # Plot the data and the fitted curve
                 if not fit_failed:
