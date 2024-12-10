@@ -67,7 +67,7 @@ class SPS():
         sharex = self._sharex
         sharey = self._sharey
         f, axs = plt.subplots(nrows, ncols, num=num, figsize=(8, 6),
-                    sharex=sharex, sharey=sharey, *args,**kwargs)
+                    sharex=sharex, sharey=sharey, constrained_layout=True, *args,**kwargs)
         self.axs = axs
         return f, axs
 
@@ -717,7 +717,6 @@ class WS(SPS):
                 ax.text(0.02, 0.49, 'q-value average: \n{:.3f} +/- {:.3f}'.format(np.nanmean(Q_values), np.nanstd(Q_values)), fontsize=13, transform=ax.transAxes)
             ax.set_xlabel('Position (mm)')
             ax.set_ylabel('Amplitude (a.u.)')    
-            figure.tight_layout(pad=0.4, w_pad=0.5, h_pad=1.0)
             
             if also_fit_Q_Gaussian:
                 return figure, n_emittances, sigmas_raw, self.acqTime[plane], ctime_s, index, Q_values

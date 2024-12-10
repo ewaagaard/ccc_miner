@@ -20,7 +20,13 @@ class Analyze_WireScanners():
         
     def plot_and_save_all_WS_emittances(self, 
                                         output_dest='', 
-                                        also_fit_Q_Gaussian=False):
+                                        also_fit_Q_Gaussian=False,
+                                        first_bunch_at_index_X=None,
+                                        first_bunch_at_index_Y=None,
+                                        expected_number_of_sets=2,
+                                        expected_batch_number_per_set=7,
+                                        expected_bunch_number=4,
+                                        ):
         """
         Iterate through a given WS data folder and save beam profile plots
         Saves all emittances and time stamps to a json dict, which it also saves
@@ -66,7 +72,11 @@ class Analyze_WireScanners():
                             if also_fit_Q_Gaussian:
                                 figure_X, n_emittances_X, sigmas_raw_X, timestamp_X, ctime_X, Q_values_X = ws.fit_Gaussian_To_and_Plot_Relevant_Profiles(plane='X', 
                                                                                                                                 no_profiles=self.no_profile_per_scan,  
-                                                                                                                                figname=f+'X', also_fit_Q_Gaussian=True)
+                                                                                                                                figname=f+'X', also_fit_Q_Gaussian=True,
+                                                                                                                                first_bunch_at_index=first_bunch_at_index_X,
+                                                                                                                                expected_number_of_sets=expected_number_of_sets,
+                                                                                                                                expected_batch_number_per_set=expected_batch_number_per_set,
+                                                                                                                                expected_bunch_number=expected_bunch_number)
                             else:
                                 figure_X, n_emittances_X, sigmas_raw_X, timestamp_X, ctime_X = ws.fit_Gaussian_To_and_Plot_Relevant_Profiles(plane='X', 
                                                                                                                                 no_profiles=self.no_profile_per_scan,  
@@ -90,7 +100,11 @@ class Analyze_WireScanners():
                             if also_fit_Q_Gaussian:
                                 figure_Y, n_emittances_Y, sigmas_raw_Y, timestamp_Y, ctime_Y, Q_values_Y = ws.fit_Gaussian_To_and_Plot_Relevant_Profiles(plane='Y', 
                                                                                                                                no_profiles=self.no_profile_per_scan,
-                                                                                                                               figname=f+'Y', also_fit_Q_Gaussian=True) 
+                                                                                                                               figname=f+'Y', also_fit_Q_Gaussian=True,
+                                                                                                                               first_bunch_at_index=first_bunch_at_index_Y,
+                                                                                                                                expected_number_of_sets=expected_number_of_sets,
+                                                                                                                                expected_batch_number_per_set=expected_batch_number_per_set,
+                                                                                                                                expected_bunch_number=expected_bunch_number) 
                             else:
                                 figure_Y, n_emittances_Y, sigmas_raw_Y, timestamp_Y, ctime_Y = ws.fit_Gaussian_To_and_Plot_Relevant_Profiles(plane='Y', 
                                                                                                                                no_profiles=self.no_profile_per_scan,
