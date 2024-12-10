@@ -10,6 +10,7 @@ import matplotlib
 import pyarrow.parquet as pq
 from scipy.optimize import curve_fit
 from scipy.signal import savgol_filter
+import os
 
 from ccc_miner import plot_settings
 
@@ -557,6 +558,9 @@ class WS(SPS):
                                                        expected_number_of_sets=2,
                                                        expected_batch_number_per_set=7,
                                                        expected_bunch_number=4,
+                                                       sigma_raw_threshold_in_m_for_qgaussian=0.01,
+                                                       dump_profile_avg=False,
+                                                       bws_avg_name=''
                                                        ): 
             """ 
             Fit Gaussian to WS data
@@ -579,6 +583,12 @@ class WS(SPS):
                     7 batches per set with normal filling scheme
                 expected_bunch_number : int
                     4 bunches per batch with normal filling scheme
+                sigma_raw_threshold_in_mm_for_qgaussian : float
+                    limit in mm above which we consider gaussian rather than q-gaussian sigma for calculating emittance
+                dump_profile_avg : bool
+                    whether to dump average WS profile data, for comparison
+                bws_avg_name : str
+                    if averaged profiles are dumped, provide name
             """
             # Read data
             data = self.data_X if plane=='X' else self.data_Y
@@ -592,7 +602,10 @@ class WS(SPS):
             # Initiate figure
             if figname is None:
                 figname = 'BWS {}'.format(plane)
-            figure, ax = self.createSubplots(figname)  
+
+
+            figure, ax = plt.subplots(1, 1, figsize=(8, 6), constrained_layout=True)
+            #figure, ax = self.createSubplots(figname)  
             
             # Collect beam parameter info
             betx, bety, dx = self.optics_at_WS()
@@ -640,32 +653,37 @@ class WS(SPS):
                 # Calculate the emittance from beam paramters 
                 beta_func = betx if plane == 'X' else bety
                 ctime_s = self.acqTimeinCycleX_inScan/1e3 if plane == 'X' else self.acqTimeinCycleY_inScan/1e3
-                #if also_fit_Q_Gaussian and not np.isnan(popt_Q[1]):
-                #    sigma_raw = self.get_sigma_RMS_from_qGaussian_fit(popt_Q) / 1e3
-                #else:
+                sigma_raw_Q = self.get_sigma_RMS_from_qGaussian_fit(popt_Q) / 1e3
                 sigma_raw = np.abs(popt[2]) / 1e3 # in m
-                sigma_betatronic = np.sqrt((sigma_raw)**2 - (self.dpp * dx)**2) if plane == 'X' else np.abs(sigma_raw)
+                if also_fit_Q_Gaussian and not np.isnan(sigma_raw_Q) and sigma_raw_Q < sigma_raw_threshold_in_m_for_qgaussian:
+                    sigma_raw_for_betatronic = sigma_raw_Q 
+                    print('Use Q-Gaussian sigma raw for RMS calculation')
+                else:
+                    sigma_raw_for_betatronic = sigma_raw
+                    print('Q-Gaussian fit too wide --> use Gaussian sigma raw for RMS calculation')                  
+                sigma_betatronic = np.sqrt((sigma_raw_for_betatronic)**2 - (self.dpp * dx)**2) if plane == 'X' else np.abs(sigma_raw_for_betatronic)
                 emittance = sigma_betatronic**2 / beta_func 
                 nemittance = emittance * self.beta(self.gamma) * self.gamma 
                 
                 # Check if fit succeeded
                 fit_failed = np.isnan(sigma_betatronic) or nemittance == np.inf
-                
-                if not fit_failed:
-                    popts.append(popt)
-                
-                print('Plane {}, bunch {}: Sigma = {:.3f} mm, n_emittance = {:.4f} um at index {}'.format(plane, i+1, 1e3 * sigma_betatronic, 1e6 * nemittance, index[i]))
+
+                print('Plane {}, bunch {}: Sigma = {:.3f} mm, sigma_Q = {:.3f} mm\nn_emittance = {:.4f} um at index {}'.format(plane, i+1, 1e3 * sigma_raw, 
+                1e3 * sigma_raw_Q, 1e6 * nemittance, index[i]))
                            
                 # Plot the data and the fitted curve
                 if not fit_failed:
+                    popts.append(popt)
                     sigmas_raw.append(sigma_raw)
                     n_emittances.append(nemittance)
                 
-                    ax.plot(pos, profile_data, 'b-', label='Data index {}'.format(index[i]))
-                    ax.set_xlim(-30, 30)
-                    ax.plot(pos, self.Gaussian(pos, *popt), 'r-', label='Fit index {}'.format(index[i]))
-                    if also_fit_Q_Gaussian:
-                        ax.plot(pos, self.Q_Gaussian(pos, *popt_Q), color='lime', ls='--', label='Q-Gaussian Fit index {}'.format(index[i]))
+                    # If no filtering, plot profiles
+                    if first_bunch_at_index is None:
+                        ax.plot(pos, profile_data, 'b-', label='Data index {}'.format(index[i]))
+                        ax.set_xlim(-30, 30)
+                        ax.plot(pos, self.Gaussian(pos, *popt), 'r-', label='Fit index {}'.format(index[i]))
+                        if also_fit_Q_Gaussian:
+                            ax.plot(pos, self.Q_Gaussian(pos, *popt_Q), color='lime', ls='--', label='Q-Gaussian Fit index {}'.format(index[i]))
                 else:
                     sigmas_raw.append(np.nan)
                     n_emittances.append(np.nan)
@@ -729,14 +747,41 @@ class WS(SPS):
                 print('Filling pattern with len = {}, after filtering:\n{}'.format(len(index_filtered), index_filtered))
                 n_emittances = n_emittances_filtered
                 sigmas_raw = sigmas_raw_filtered
+                index_unfiltered = index
                 index = index_filtered
                 if also_fit_Q_Gaussian:
                     Q_values = Q_values_filtered
-            
+
+                # Iterate over bunches, averaging over successful filtered fits
+                prof_avg_raw = []
+                for ii in range(no_bunches):
+                    if index_unfiltered[ii] in index_filtered:
+                        pos_all[ii]
+                        prof_avg_raw.append(np.array(prof_all[ii]))
+
+                prof_avg = np.mean(np.array(prof_avg_raw), axis=0)
+                popt_avg = self.fit_Gaussian(pos, prof_avg)        
+                if also_fit_Q_Gaussian:
+                    p0_q_avg = [popt[1], q0, 1/popt_avg[2]**2/(5-3*q0), 2*popt_avg[0]]
+                    popt_Q_avg = self.fit_Q_Gaussian(pos, prof_avg, p0=p0_q_avg)
+
+                ax.plot(pos, prof_avg, 'b-', label='Mean BWS data')
+                ax.set_xlim(-30, 30)
+                ax.plot(pos, self.Gaussian(pos, *popt_avg), 'r-', label='Gaussian fit')
+                if also_fit_Q_Gaussian:
+                    ax.plot(pos, self.Q_Gaussian(pos, *popt_Q_avg), color='lime', ls='--', label='Q-Gaussian fit')
+
+                # Save average profiles if desired
+                if dump_profile_avg:
+                    os.makedirs('output_bws/average_profiles', exist_ok=True)
+                    with open('output_bws/{}_average_bws_profiles_{}.npy'.format(plane, bws_avg_name), 'wb') as f:
+                        np.save(f, pos)
+                        np.save(f, prof_avg)
+                        
             en_bar = np.nanmean(n_emittances) # ignore nans in this calculation
             spread = np.nanstd(n_emittances) # ignore nans in this calculation
             ax.text(0.89, 0.89, plane, fontsize=35, fontweight='bold', transform=ax.transAxes)
-            ax.text(0.02, 0.12, '{}: {} profiles'.format(ws_set, no_bunches), fontsize=13, transform=ax.transAxes)
+            ax.text(0.02, 0.12, '{} profiles'.format(len(index)), fontsize=13, transform=ax.transAxes)
             ax.text(0.02, 0.92, 'UTC timestamp:\n {}'.format(self.acqTime[plane]), fontsize=10, transform=ax.transAxes)
             ax.text(0.02, 0.8, 'Plane {} average: \n$\epsilon^n$ = {:.3f} +/- {:.3f} $\mu$m rad'.format(plane, 1e6 * en_bar, 1e6 * spread), fontsize=14, transform=ax.transAxes)
             ax.text(0.78, 0.14, 'InScan {}:\nctime = {:.2f} s'.format(plane, ctime_s),
@@ -744,7 +789,8 @@ class WS(SPS):
             if also_fit_Q_Gaussian:
                 ax.text(0.02, 0.49, 'q-value average: \n{:.3f} +/- {:.3f}'.format(np.nanmean(Q_values), np.nanstd(Q_values)), fontsize=13, transform=ax.transAxes)
             ax.set_xlabel('Position (mm)')
-            ax.set_ylabel('Amplitude (a.u.)')    
+            ax.set_ylabel('Amplitude (a.u.)')
+            ax.legend(fontsize=10.2, loc='right')    
             
             if also_fit_Q_Gaussian:
                 return figure, n_emittances, sigmas_raw, self.acqTime[plane], ctime_s, index, Q_values
