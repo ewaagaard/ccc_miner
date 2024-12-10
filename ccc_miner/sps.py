@@ -71,7 +71,7 @@ class SPS():
         self.axs = axs
         return f, axs
 
-    ########### FIT FUNCTION - GAUSSIAN ###########
+    ########### FIT FUNCTION - GAUSSIAN ########### 
     def Gaussian(self, x, A, mean, sigma, offset):
         """Gaussian fit of the data """
         return A * np.exp(-(x - mean)**2 / (2 * sigma**2)) + offset
@@ -627,9 +627,9 @@ class WS(SPS):
                 profile_data = prof_all[i]
                 
                 # Fit Gaussian and Q-Gaussian if desired 
-                popt = self.fit_Gaussian(pos, profile_data, p0=(1.0, 0.0, 0.02))
+                popt = self.fit_Gaussian(pos, profile_data, p0=(1.0, 0.0, 0.02, 0.0))
                 q0 = 1.0
-                p0_q = [popt[1], q0, 1/popt[2]**2/(5-3*q0), 2*popt[0]]
+                p0_q = [popt[1], q0, 1/popt[2]**2/(5-3*q0), 2*popt[0], 0.0]
 
                 if also_fit_Q_Gaussian:
                     popt_Q = self.fit_Q_Gaussian(pos, profile_data, p0=p0_q)
