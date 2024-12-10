@@ -71,10 +71,10 @@ class SPS():
         self.axs = axs
         return f, axs
 
-    ########### FIT FUNCTION - GAUSSIAN ########### 
-    def Gaussian(self, x, A, mean, sigma, offset):
+    ########### FIT FUNCTION - GAUSSIAN ###########
+    def Gaussian(self, x, A, mean, sigma): # offset
         """Gaussian fit of the data """
-        return A * np.exp(-(x - mean)**2 / (2 * sigma**2)) + offset
+        return A * np.exp(-(x - mean)**2 / (2 * sigma**2)) #+ offset
     
     
     def fit_Gaussian(self, x_data, y_data, p0 = None):
@@ -92,9 +92,9 @@ class SPS():
             initial_amplitude = np.max(y_data) - np.min(y_data)
             initial_mean = x_data[np.argmax(y_data)]
             initial_sigma = 1.0 # starting guess for now
-            initial_offset = np.min(savgol_filter(y_data,21,2))
+            #initial_offset = np.min(savgol_filter(y_data,21,2))
             
-            initial_guess = (initial_amplitude, initial_mean, initial_sigma, initial_offset)
+            initial_guess = (initial_amplitude, initial_mean, initial_sigma) # add initial_offset if desired
         # Try to fit a Gaussian, otherwise return array of infinity
         try:
             popt, pcov = curve_fit(self.Gaussian, x_data, y_data, p0=initial_guess)
@@ -135,23 +135,19 @@ class SPS():
         return eq
     
     
-    def Q_Gaussian(self, x, mu, q, beta, A, C):
+    def Q_Gaussian(self, x, mu, q, beta, A): # add baseline C if desired
         """
         Returns Q-Gaussian from Eq. (2.1) in (Umarov, Tsallis, Steinberg, 2008) 
         available at https://link.springer.com/article/10.1007/s00032-008-0087-y
         """
-        Gq =  A * np.sqrt(beta) / self._Cq(q) * self._eq(-beta*(x - mu)**2, q) + C
+        Gq =  A * np.sqrt(beta) / self._Cq(q) * self._eq(-beta*(x - mu)**2, q) # + C
         return Gq
     
     
     def fit_Q_Gaussian(self, x_data, y_data, q0 = 1.4, p0=None):
         """
         Fits Q-Gaussian to x- and y-data (numpy arrays)
-        Parameters: 
-        q0 : float
-            q-value starting guess 
-        p0 : np.ndarray
-            array with starting guesses
+        Parameters: q0 (starting guess)
         
         Returns fitted parameters poptq and fit errors poptqe
         """
@@ -160,7 +156,7 @@ class SPS():
         if p0 is None:
             popt = self.fit_Gaussian(x_data, y_data) # gives A, mu, sigma, offset
             p0 = [popt[1], q0, 1/popt[2]**2/(5-3*q0), 2*popt[0], popt[3]] # mu, q, beta, A, offset
-
+    
         try:
             poptq, pcovq = curve_fit(self.Q_Gaussian, x_data, y_data, p0)
             poptqe = np.sqrt(np.diag(pcovq))
@@ -188,6 +184,7 @@ class SPS():
             return 1./np.sqrt(beta*(5.-3.*q))
         else:
             return np.nan
+
 
 class FBCT(SPS):
         """
@@ -627,24 +624,26 @@ class WS(SPS):
                 profile_data = prof_all[i]
                 
                 # Fit Gaussian and Q-Gaussian if desired 
-                popt = self.fit_Gaussian(pos, profile_data, p0=(1.0, 0.0, 0.02, 0.0))
-                q0 = 1.0
-                p0_q = [popt[1], q0, 1/popt[2]**2/(5-3*q0), 2*popt[0], 0.0]
-
+                popt = self.fit_Gaussian(pos, profile_data)
+                
                 if also_fit_Q_Gaussian:
+                    # Fit q-Gaussian to final X and Y profiles, to latest curves - initial guess from Gaussian
+                    q0 = 1.0
+                    p0_q = [popt[1], q0, 1/popt[2]**2/(5-3*q0), 2*popt[0]]
+
                     popt_Q = self.fit_Q_Gaussian(pos, profile_data, p0=p0_q)
                     Q_values.append(popt_Q[1])
                     print('Q-Gaussian fit: q = {:.4f}\n'.format(popt_Q[1]))
                     if not np.isnan(popt_Q[1]):
-                        popts_Q.append(popt_Q) 
+                        popts_Q.append(popt_Q)     
 
                 # Calculate the emittance from beam paramters 
                 beta_func = betx if plane == 'X' else bety
                 ctime_s = self.acqTimeinCycleX_inScan/1e3 if plane == 'X' else self.acqTimeinCycleY_inScan/1e3
-                if also_fit_Q_Gaussian:
-                    sigma_raw = self.get_sigma_RMS_from_qGaussian_fit(popt_Q)
-                else:
-                    sigma_raw = np.abs(popt[2]) / 1e3 # in m
+                #if also_fit_Q_Gaussian and not np.isnan(popt_Q[1]):
+                #    sigma_raw = self.get_sigma_RMS_from_qGaussian_fit(popt_Q) / 1e3
+                #else:
+                sigma_raw = np.abs(popt[2]) / 1e3 # in m
                 sigma_betatronic = np.sqrt((sigma_raw)**2 - (self.dpp * dx)**2) if plane == 'X' else np.abs(sigma_raw)
                 emittance = sigma_betatronic**2 / beta_func 
                 nemittance = emittance * self.beta(self.gamma) * self.gamma 
@@ -655,8 +654,8 @@ class WS(SPS):
                 if not fit_failed:
                     popts.append(popt)
                 
-                print('Plane {}, bunch {}: Sigma = {:.3f} mm, n_emittance = {:.4f} um at index {}'.format(plane, i+1, 1e3 * sigma_betatronic, 1e6 * nemittance, index[i]))               
-                
+                print('Plane {}, bunch {}: Sigma = {:.3f} mm, n_emittance = {:.4f} um at index {}'.format(plane, i+1, 1e3 * sigma_betatronic, 1e6 * nemittance, index[i]))
+                           
                 # Plot the data and the fitted curve
                 if not fit_failed:
                     sigmas_raw.append(sigma_raw)
@@ -667,6 +666,9 @@ class WS(SPS):
                     ax.plot(pos, self.Gaussian(pos, *popt), 'r-', label='Fit index {}'.format(index[i]))
                     if also_fit_Q_Gaussian:
                         ax.plot(pos, self.Q_Gaussian(pos, *popt_Q), color='lime', ls='--', label='Q-Gaussian Fit index {}'.format(index[i]))
+                else:
+                    sigmas_raw.append(np.nan)
+                    n_emittances.append(np.nan)
 
             # If bunch slots are known beforehand, filter these out
             if first_bunch_at_index is not None:
