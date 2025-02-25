@@ -10,11 +10,9 @@ import matplotlib
 import pyarrow.parquet as pq
 from scipy.optimize import curve_fit
 from scipy.signal import savgol_filter
-<<<<<<< HEAD
 import os
-=======
 from datetime import datetime
->>>>>>> 4ff0f7e (Added DCCT device)
+
 
 from ccc_miner import plot_settings
 
