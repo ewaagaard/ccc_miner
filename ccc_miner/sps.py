@@ -10,7 +10,11 @@ import matplotlib
 import pyarrow.parquet as pq
 from scipy.optimize import curve_fit
 from scipy.signal import savgol_filter
+<<<<<<< HEAD
 import os
+=======
+from datetime import datetime
+>>>>>>> 4ff0f7e (Added DCCT device)
 
 from ccc_miner import plot_settings
 
@@ -852,3 +856,297 @@ class WS(SPS):
             
             # Also return values for future use
             return self.inj_times, ex_mean, ex_std, ey_mean, ey_std
+        
+        
+class DCCT(SPS):
+    """
+    The DC Current Transformer with 10 kHz reading, to produce noise spectra.
+    Analyzes and plots DCCT data with FFT analysis.
+    
+    Parameters:
+        parquet_file: Path to the parquet data file
+    """
+    def __init__(self, parquet_file, optics='q26'):
+        super().__init__()  # instantiate SPS class
+        self.sampling_rate = 10e3  # 10 kHz sampling rate
+        self.optics = optics
+        
+        # Extract device name from filename
+        filename = Path(parquet_file).name
+        self.device_name = filename.split('_')[0:3]  # Gets ['QF', 'DCCT', '10kHz']
+        self.quad_class = self.device_name[0][10:12]
+        self.device_title = f"{self.quad_class} {self.device_name[1]}, {self.device_name[2][0:2]} {self.device_name[2][2:]}"
+        
+        # Load data 
+        self.load_data(parquet_file)
+        
+        # Convert current to knob if this is a QF or QD measurement
+        if self.quad_class in ['QF', 'QD']:
+            self.knob = self.current_to_knob(self.signal)
+            print('Converted current to knob {}\n'.format(self.device_title))
+
+    def load_data(self, parquet_file):
+        """Load and process DCCT parquet data file"""
+        data = pq.read_table(parquet_file).to_pydict()
+        self.raw_data = data['signals'][0][0]['samples']
+        
+        # Convert string data to numpy array
+        self.signal = np.fromstring(self.raw_data, sep=',')
+        
+        # Convert Unix timestamp to local time
+        unix_timestamp = data['timestamp_seconds'][0]
+        local_time = datetime.fromtimestamp(unix_timestamp)
+        self.timestamp = local_time.strftime("%Y-%m-%d %H:%M:%S")
+        
+        self.time = np.arange(len(self.signal)) / self.sampling_rate
+
+    def current_to_knob(self, current):
+        """Convert current to knob value based on optics"""
+        if self.optics == 'q20':
+            IQD_TO_KQD = -0.0001351457776475569
+            IQF_TO_KQF = 0.00013513853162791571 
+        elif self.optics == 'q26':
+            IQD_TO_KQD = -0.00020632408641668723
+            IQF_TO_KQF = 0.00020656802532188648
+        else:
+            raise ValueError(f"Unknown optics: {self.optics}")
+            
+        if self.quad_class == 'QF':
+            return current * IQF_TO_KQF
+        elif self.quad_class == 'QD':
+            return current * IQD_TO_KQD
+        else:
+            return None
+            
+    def find_significant_peaks(self, freqs, amps, phases, base_freq, n_peaks=6, freq_limit=1500):
+        """
+        Find the n most significant peaks related to a base frequency
+        
+        Parameters:
+            freqs: Array of frequencies
+            amps: Array of amplitudes
+            phases: Array of phases
+            base_freq: Base frequency to look for harmonics (e.g. 50 Hz or 68 Hz)
+            n_peaks: Number of peaks to return
+            freq_limit: Upper frequency limit to search
+            
+        Returns:
+            List of tuples (frequency, amplitude, phase) for the n highest peaks
+        """
+        peaks = []
+        max_harmonic = int(freq_limit / base_freq)
+        
+        for harmonic in range(1, max_harmonic + 1):
+            center_freq = base_freq * harmonic
+            peak_freq, peak_amp = self.find_peak_in_interval(freqs, amps, center_freq)
+            if peak_freq is not None:
+                # Find corresponding phase
+                phase_idx = np.argmin(np.abs(freqs - peak_freq))
+                peaks.append((peak_freq, peak_amp, phases[phase_idx]))
+                
+        # Sort by amplitude and take top n_peaks
+        peaks.sort(key=lambda x: x[1], reverse=True)
+        return peaks[:n_peaks]
+    
+    def find_significant_50hz_peaks(self, freqs, amps, phases, n_peaks=6):
+        """Convenience method for 50 Hz peaks"""
+        return self.find_significant_peaks(freqs, amps, phases, base_freq=50, n_peaks=n_peaks)
+    
+    def find_significant_68hz_peaks(self, freqs, amps, phases, n_peaks=6):
+        """Convenience method for 68 Hz peaks"""
+        return self.find_significant_peaks(freqs, amps, phases, base_freq=68, n_peaks=n_peaks)
+
+    def find_peak_in_interval(self, freqs, amps, center_freq, width=0.5):
+        """
+        Find the highest peak within ±width Hz of center_freq
+        
+        Parameters:
+            freqs: Array of frequencies
+            amps: Array of amplitudes
+            center_freq: Center frequency to search around
+            width: Half-width of search interval in Hz
+            
+        Returns:
+            peak_freq, peak_amp: Frequency and amplitude of highest peak in interval
+        """
+        mask = (freqs >= center_freq - width) & (freqs <= center_freq + width)
+        if not any(mask):
+            return None, None
+        
+        interval_freqs = freqs[mask]
+        interval_amps = amps[mask]
+        peak_idx = np.argmax(interval_amps)
+        
+        return interval_freqs[peak_idx], interval_amps[peak_idx]
+
+
+    def compute_fft(self, data):
+        """
+        Compute FFT of input data
+        
+        Parameters:
+            data: numpy array of time series data
+            
+        Returns:
+            xf: Frequency array
+            yf: Complex FFT values
+            mean: Mean value of input data
+        """
+        n = len(data)
+        yf = np.fft.fft(data - np.mean(data))
+        xf = np.fft.fftfreq(n, 1/self.sampling_rate)
+        
+        # Sort frequencies and amplitudes
+        sorted_indices = np.argsort(xf)
+        xf = xf[sorted_indices]
+        yf = yf[sorted_indices]
+        
+        return xf, yf, np.mean(data)
+
+
+    def analyze_and_plot(self, interval=[5.0, 25.0], freq_limit=1500, save_path='plots', output_path='output', annotation=None):
+        """
+        Analyze DCCT data and generate plots with FFT analysis
+        
+        Parameters:
+            interval: Time interval to analyze in seconds
+            freq_limit: Upper frequency limit for FFT plot in Hz
+            save_path: Path to save the plots
+            output_path: Path to save the results dictionary
+            annotation: Optional text to add to the FFT plot
+        """
+        # Create save paths if they don't exist
+        Path(save_path).mkdir(parents=True, exist_ok=True)
+        Path(output_path).mkdir(parents=True, exist_ok=True)
+
+        # Compute FFT for current
+        signal_to_analyze = self.signal[int(interval[0] * self.sampling_rate):int((interval[-1]) * self.sampling_rate)]
+        xf, yf, mean_value = self.compute_fft(signal_to_analyze)
+        
+        # Also compute FFT for knob if available
+        if hasattr(self, 'knob'):
+            knob_to_analyze = self.knob[int(interval[0] * self.sampling_rate):int((interval[-1]) * self.sampling_rate)]
+            xf_knob, yf_knob, mean_knob = self.compute_fft(knob_to_analyze)
+        
+        # Create figure with subplots
+        fig, axs = plt.subplots(2, 1, figsize=(12, 5*2), 
+                               constrained_layout=True)
+        
+        # Plot time evolution
+        mask_to_analyze = (self.time >= interval[0]) & (self.time <= interval[-1])
+        axs[0].plot(self.time[mask_to_analyze], self.signal[mask_to_analyze], label='DCCT', color='b')
+        axs[0].set_title(f'{self.device_title} Signal Evolution - {self.timestamp}')
+        axs[0].set_xlabel('Time [s]')
+        axs[0].set_ylabel('Current [A]')
+        axs[0].legend()
+        axs[0].grid(True)
+        axs[0].set_xlim(interval[0], interval[0] + 1.0)
+
+        # Plot FFT spectrum for current
+        positive_freq_mask = xf >= 0
+        positive_freqs = xf[positive_freq_mask]
+        positive_amps = np.abs(yf[positive_freq_mask])/len(self.signal)
+        phases = np.angle(yf[positive_freq_mask])
+        
+        # Find significant peaks for current (both 50 Hz and 68 Hz)
+        significant_peaks_current_50hz = self.find_significant_50hz_peaks(
+            positive_freqs, positive_amps, phases)
+        significant_peaks_current_68hz = self.find_significant_68hz_peaks(
+            positive_freqs, positive_amps, phases)
+        
+        # Plot current spectrum
+        axs[1].semilogy(positive_freqs, positive_amps, color='b')
+        
+        # Mark peaks for current
+        for freq, amp, _ in significant_peaks_current_50hz:
+            axs[1].plot(freq, amp, 'rv', markersize=10, label='50 Hz' if freq == significant_peaks_current_50hz[0][0] else None)
+        for freq, amp, _ in significant_peaks_current_68hz:
+            axs[1].plot(freq, amp, 'g^', markersize=10, label='68 Hz' if freq == significant_peaks_current_68hz[0][0] else None)
+            
+        # Add annotation if provided
+        if annotation:
+            axs[1].text(0.02, 0.98, annotation, transform=axs[1].transAxes,
+                       verticalalignment='top', fontsize=12)
+            
+        axs[1].set_xlabel('Frequency [Hz]')
+        axs[1].set_ylabel('Current FFT amplitude')
+        axs[1].set_xlim(0, freq_limit)
+        axs[1].set_ylim(1e-7, 1e-2)
+        axs[1].grid(True)
+        axs[1].legend()
+        
+        # Print current peaks summary
+        print(f"\nCurrent significant peaks summary:")
+        print("\n50 Hz harmonics:")
+        for freq, amp, phase in significant_peaks_current_50hz:
+            print(f"  {freq:.2f} Hz: amplitude = {amp:.2e}, phase = {phase:.2f}")
+        print("\n68 Hz harmonics:")
+        for freq, amp, phase in significant_peaks_current_68hz:
+            print(f"  {freq:.2f} Hz: amplitude = {amp:.2e}, phase = {phase:.2f}")
+        
+        # If knob conversion exists, plot its spectrum too
+        if hasattr(self, 'knob'):
+            positive_freq_mask_knob = xf_knob >= 0
+            positive_freqs_knob = xf_knob[positive_freq_mask_knob]
+            positive_amps_knob = np.abs(yf_knob[positive_freq_mask_knob])/len(self.knob)
+            phases_knob = np.angle(yf_knob[positive_freq_mask_knob])
+            
+            # Find significant 50 Hz peaks for knob
+            significant_peaks_knob = self.find_significant_50hz_peaks(
+                positive_freqs_knob, positive_amps_knob, phases_knob)
+            
+            # Print knob peaks summary
+            print(f"\nKnob significant peaks summary (50 Hz):")
+            for freq, amp, phase in significant_peaks_knob:
+                print(f"  {freq:.2f} Hz: amplitude = {amp:.2e}, phase = {phase:.2f}")
+        
+        # Save results
+        results = {
+            'time': self.time,
+            'current': {
+                'signal': self.signal,
+                'mean': mean_value,
+                'fft_freq': xf,
+                'fft_amp': np.abs(yf)/len(self.signal),
+                'fft_complex': yf/len(self.signal),
+                'significant_peaks': {
+                    '50Hz': {
+                        'frequencies': [p[0] for p in significant_peaks_current_50hz],
+                        'amplitudes': [p[1] for p in significant_peaks_current_50hz],
+                        'phases': [p[2] for p in significant_peaks_current_50hz]
+                    },
+                    '68Hz': {
+                        'frequencies': [p[0] for p in significant_peaks_current_68hz],
+                        'amplitudes': [p[1] for p in significant_peaks_current_68hz],
+                        'phases': [p[2] for p in significant_peaks_current_68hz]
+                    }
+                }
+            }
+        }
+        
+        if hasattr(self, 'knob'):
+            results['knob'] = {
+                'quad_class': self.quad_class,
+                'signal': self.knob,
+                'mean': mean_knob,
+                'fft_freq': xf_knob,
+                'fft_amp': np.abs(yf_knob)/len(self.knob),
+                'fft_complex': yf_knob/len(self.knob),
+                'significant_peaks': {
+                    'frequencies': [p[0] for p in significant_peaks_knob],
+                    'amplitudes': [p[1] for p in significant_peaks_knob],
+                    'phases': [p[2] for p in significant_peaks_knob]
+                }
+            }
+        
+        # Save plot
+        plot_filename = f"{self.device_name[0]}_{self.device_name[1]}_{self.device_name[2]}_{self.timestamp}.png"
+        plt.savefig(save_path + '/' + plot_filename, dpi=400)
+        plt.show()
+        
+        # Save results dictionary
+        output_filename = f"{self.device_name[0]}_{self.device_name[1]}_{self.device_name[2]}_{self.timestamp}_results.npy"
+        np.save(output_path + '/' + output_filename, results)
+        print(f"\nResults saved to: {output_path + '/' + output_filename}")
+            
+        return results
