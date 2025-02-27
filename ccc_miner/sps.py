@@ -8,6 +8,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import matplotlib
 import pyarrow.parquet as pq
+import scipy
 from scipy.optimize import curve_fit
 from scipy.signal import savgol_filter
 import os
@@ -954,7 +955,7 @@ class DCCT(SPS):
         """Convenience method for 68 Hz peaks"""
         return self.find_significant_peaks(freqs, amps, phases, base_freq=68, n_peaks=n_peaks)
 
-    def find_peak_in_interval(self, freqs, amps, center_freq, width=0.5):
+    def find_peak_in_interval(self, freqs, amps, center_freq, width=2.5):
         """
         Find the highest peak within ±width Hz of center_freq
         
@@ -991,6 +992,8 @@ class DCCT(SPS):
             mean: Mean value of input data
         """
         n = len(data)
+
+        # Should be equivalent to
         yf = np.fft.fft(data - np.mean(data))
         xf = np.fft.fftfreq(n, 1/self.sampling_rate)
         
