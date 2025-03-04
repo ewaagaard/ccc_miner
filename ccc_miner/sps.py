@@ -76,9 +76,9 @@ class SPS():
         return f, axs
 
     ########### FIT FUNCTION - GAUSSIAN ###########
-    def Gaussian(self, x, A, mean, sigma): # offset
+    def Gaussian(self, x, A, mean, sigma, offset):
         """Gaussian fit of the data """
-        return A * np.exp(-(x - mean)**2 / (2 * sigma**2)) #+ offset
+        return A * np.exp(-(x - mean)**2 / (2 * sigma**2)) + offset
     
     
     def fit_Gaussian(self, x_data, y_data, p0 = None):
@@ -96,9 +96,9 @@ class SPS():
             initial_amplitude = np.max(y_data) - np.min(y_data)
             initial_mean = x_data[np.argmax(y_data)]
             initial_sigma = 1.0 # starting guess for now
-            #initial_offset = np.min(savgol_filter(y_data,21,2))
+            initial_offset = np.min(savgol_filter(y_data,21,2))
             
-            initial_guess = (initial_amplitude, initial_mean, initial_sigma) # add initial_offset if desired
+            initial_guess = (initial_amplitude, initial_mean, initial_sigma, initial_offset) # add initial_offset if desired
         # Try to fit a Gaussian, otherwise return array of infinity
         try:
             popt, pcov = curve_fit(self.Gaussian, x_data, y_data, p0=initial_guess)
@@ -139,12 +139,12 @@ class SPS():
         return eq
     
     
-    def Q_Gaussian(self, x, mu, q, beta, A): # add baseline C if desired
+    def Q_Gaussian(self, x, mu, q, beta, A, C): # add baseline C if desired
         """
         Returns Q-Gaussian from Eq. (2.1) in (Umarov, Tsallis, Steinberg, 2008) 
         available at https://link.springer.com/article/10.1007/s00032-008-0087-y
         """
-        Gq =  A * np.sqrt(beta) / self._Cq(q) * self._eq(-beta*(x - mu)**2, q) # + C
+        Gq =  A * np.sqrt(beta) / self._Cq(q) * self._eq(-beta*(x - mu)**2, q) + C
         return Gq
     
     
@@ -645,7 +645,7 @@ class WS(SPS):
                 if also_fit_Q_Gaussian:
                     # Fit q-Gaussian to final X and Y profiles, to latest curves - initial guess from Gaussian
                     q0 = 1.0
-                    p0_q = [popt[1], q0, 1/popt[2]**2/(5-3*q0), 2*popt[0]]
+                    p0_q = [popt[1], q0, 1/popt[2]**2/(5-3*q0), 2*popt[0], 0.0]
 
                     popt_Q = self.fit_Q_Gaussian(pos, profile_data, p0=p0_q)
                     Q_values.append(popt_Q[1])
@@ -658,12 +658,18 @@ class WS(SPS):
                 ctime_s = self.acqTimeinCycleX_inScan/1e3 if plane == 'X' else self.acqTimeinCycleY_inScan/1e3
                 sigma_raw_Q = self.get_sigma_RMS_from_qGaussian_fit(popt_Q) / 1e3
                 sigma_raw = np.abs(popt[2]) / 1e3 # in m
+                
+                # Uncomment if want to consider sigma_RMS_Qgaussian, for now we consider core Gaussian emittance
+                '''
                 if also_fit_Q_Gaussian and not np.isnan(sigma_raw_Q) and sigma_raw_Q < sigma_raw_threshold_in_m_for_qgaussian:
                     sigma_raw_for_betatronic = sigma_raw_Q 
                     print('Use Q-Gaussian sigma raw for RMS calculation')
                 else:
                     sigma_raw_for_betatronic = sigma_raw
                     print('Q-Gaussian fit too wide --> use Gaussian sigma raw for RMS calculation')                  
+                '''
+                
+                sigma_raw_for_betatronic = sigma_raw
                 sigma_betatronic = np.sqrt((sigma_raw_for_betatronic)**2 - (self.dpp * dx)**2) if plane == 'X' else np.abs(sigma_raw_for_betatronic)
                 emittance = sigma_betatronic**2 / beta_func 
                 nemittance = emittance * self.beta(self.gamma) * self.gamma 
@@ -765,7 +771,7 @@ class WS(SPS):
                 prof_avg = np.mean(np.array(prof_avg_raw), axis=0)
                 popt_avg = self.fit_Gaussian(pos, prof_avg)        
                 if also_fit_Q_Gaussian:
-                    p0_q_avg = [popt[1], q0, 1/popt_avg[2]**2/(5-3*q0), 2*popt_avg[0]]
+                    p0_q_avg = [popt[1], q0, 1/popt_avg[2]**2/(5-3*q0), 2*popt_avg[0], popt_avg[3]]
                     popt_Q_avg = self.fit_Q_Gaussian(pos, prof_avg, p0=p0_q_avg)
 
                 ax.plot(pos, prof_avg, 'b-', label='Mean BWS data')
