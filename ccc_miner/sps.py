@@ -29,12 +29,8 @@ class SPS():
     """
     
     def __init__(self,
-                 fBCT_device = 'SPS.BCTW.31931/Acquisition',
-                 WS_device_H = 'SPS.BWS.41677.H/Acquisition',
-                 WS_device_V = 'SPS.BWS.41678.V/Acquisition',
                  stride = 5
                  ):
-        self.fBCT_device = fBCT_device
         self.dpp = 1e-3
         
         # Select correct wire scanner device - will be read from wire scanner data directly
@@ -198,10 +194,13 @@ class FBCT(SPS):
         Parameters
             data : raw parquet file 
         """
-        def __init__(self, parquet_file, min_intensity = 40):
+        def __init__(self, parquet_file, 
+                     fBCT_device = 'SPS.BCTW.31931/Acquisition', 
+                     min_intensity = 40):
             super().__init__()  # instantiate SPS class
             
             # Load data 
+            self.fBCT_device = fBCT_device
             self.load_data(parquet_file)
             
             # Process data - find which buckets that are filled and measurements over cycle
@@ -262,7 +261,7 @@ class FBCT(SPS):
             self.axs[0].set_ylabel('Cycle time (s)')
             self.axs[1].set_xlabel('25 ns slot')
             self.axs[1].set_ylabel('Intensity')
-            figure.tight_layout(pad=0.4, w_pad=0.5, h_pad=1.0)
+            #figure.tight_layout(pad=0.4, w_pad=0.5, h_pad=1.0)
             if show_plot:
                 plt.show()
             return figure
@@ -298,7 +297,7 @@ class FBCT(SPS):
             ax.set_xlabel('Cycle time [s]')
             if plot_legend:
                 ax.legend()
-            figure.tight_layout(pad=0.4, w_pad=0.5, h_pad=1.0)
+            #figure.tight_layout(pad=0.4, w_pad=0.5, h_pad=1.0)
             return figure        
         
         def plot_bunches_over_injection_time(self, end_time=47.4, label=None, figure=None, ax=None, ls='-',
@@ -354,7 +353,7 @@ class FBCT(SPS):
                 
             if label is not None:
                 ax.legend()
-            figure.tight_layout()
+            #figure.tight_layout()
                 
             return figure, ax
 
@@ -369,11 +368,14 @@ class WS(SPS):
         """
         def __init__(self, 
                      parquet_file,
+                     WS_device_H = 'SPS.BWS.41677.H/Acquisition',
+                     WS_device_V = 'SPS.BWS.41678.V/Acquisition',
+                     use_BWS_in_X_nr_1=True # either 51637 or 51638
                      ):  
             super().__init__()  # instantiate SPS class
             
             # Load data
-            self.load_X_Y_data(parquet_file)
+            self.load_X_Y_data(parquet_file, use_BWS_in_X_nr_1=use_BWS_in_X_nr_1)
             
         def beta(self, gamma):
             """Convert relativistic gamma factor to beta factor"""
@@ -398,7 +400,7 @@ class WS(SPS):
             except FileNotFoundError:
                 print('Optics file not found: need to run find_WS_optics module in data folder first!')
         
-        def load_X_Y_data(self, parquet_file):
+        def load_X_Y_data(self, parquet_file, use_BWS_in_X_nr_1=True):
             # Check beta function
             # Read data from both devices 
             data = pq.read_table(parquet_file).to_pydict()
@@ -406,7 +408,7 @@ class WS(SPS):
             print('\nLoading data - devices available: {}'.format(devices))
             
             # Find the correct wire scanner device
-            self.WS_device_H = devices[0]
+            self.WS_device_H = devices[0 if use_BWS_in_X_nr_1 else 1] # either 51637 or 51638
             self.WS_device_V = devices[2]
             print('Selected WS devices:\n{}\n{}'.format(self.WS_device_H, self.WS_device_V))
             
@@ -857,7 +859,7 @@ class WS(SPS):
             #ax.set_xlim(-0.4, 48.2)
             #ax.set_ylim(0.7, 2.5)
             ax.legend(loc=2)
-            fig.tight_layout(pad=0.4, w_pad=0.5, h_pad=1.0)
+            #fig.tight_layout(pad=0.4, w_pad=0.5, h_pad=1.0)
             
             # Also return values for future use
             return self.inj_times, ex_mean, ex_std, ey_mean, ey_std
