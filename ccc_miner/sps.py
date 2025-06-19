@@ -563,9 +563,9 @@ class WS(SPS):
                                                        expected_number_of_sets=2,
                                                        expected_batch_number_per_set=7,
                                                        expected_bunch_number=4,
-                                                       sigma_raw_threshold_in_m_for_qgaussian=0.01,
                                                        dump_profile_avg=False,
-                                                       bws_avg_name=''
+                                                       bws_avg_name='',
+                                                       output_bws_profiles='average_bws_profiles'
                                                        ): 
             """ 
             Fit Gaussian to WS data
@@ -588,12 +588,12 @@ class WS(SPS):
                     7 batches per set with normal filling scheme
                 expected_bunch_number : int
                     4 bunches per batch with normal filling scheme
-                sigma_raw_threshold_in_mm_for_qgaussian : float
-                    limit in mm above which we consider gaussian rather than q-gaussian sigma for calculating emittance
                 dump_profile_avg : bool
                     whether to dump average WS profile data, for comparison
                 bws_avg_name : str
-                    if averaged profiles are dumped, provide name
+                    if averaged profiles are dumped, provide name for file
+                output_bws_profiles : str
+                    name for output wire scanner data
             """
             # Read data
             data = self.data_X if plane=='X' else self.data_Y
@@ -661,17 +661,17 @@ class WS(SPS):
                 sigma_raw_Q = self.get_sigma_RMS_from_qGaussian_fit(popt_Q) / 1e3
                 sigma_raw = np.abs(popt[2]) / 1e3 # in m
                 
-                # Uncomment if want to consider sigma_RMS_Qgaussian, for now we consider core Gaussian emittance
-                '''
+                # Possibility to use q-Gaussian RMS for emittance calculations
+                ''' 
                 if also_fit_Q_Gaussian and not np.isnan(sigma_raw_Q) and sigma_raw_Q < sigma_raw_threshold_in_m_for_qgaussian:
                     sigma_raw_for_betatronic = sigma_raw_Q 
                     print('Use Q-Gaussian sigma raw for RMS calculation')
                 else:
                     sigma_raw_for_betatronic = sigma_raw
-                    print('Q-Gaussian fit too wide --> use Gaussian sigma raw for RMS calculation')                  
+                    print('Q-Gaussian fit too wide --> use Gaussian sigma raw for RMS calculation')
                 '''
-                
                 sigma_raw_for_betatronic = sigma_raw
+                
                 sigma_betatronic = np.sqrt((sigma_raw_for_betatronic)**2 - (self.dpp * dx)**2) if plane == 'X' else np.abs(sigma_raw_for_betatronic)
                 emittance = sigma_betatronic**2 / beta_func 
                 nemittance = emittance * self.beta(self.gamma) * self.gamma 
@@ -784,8 +784,8 @@ class WS(SPS):
 
                 # Save average profiles if desired
                 if dump_profile_avg:
-                    os.makedirs('output_bws/average_profiles', exist_ok=True)
-                    with open('output_bws/{}_average_bws_profiles_{}.npy'.format(plane, bws_avg_name), 'wb') as f:
+                    os.makedirs('output_bws/{}'.format(output_bws_profiles), exist_ok=True)
+                    with open('output_bws/{}/{}_average_bws_profiles_{}.npy'.format(output_bws_profiles, plane, bws_avg_name), 'wb') as f:
                         np.save(f, pos)
                         np.save(f, prof_avg)
                         
