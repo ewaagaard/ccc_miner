@@ -1116,7 +1116,8 @@ class DCCT(SPS):
                 'signal': self.signal,
                 'mean': mean_value,
                 'fft_freq': xf,
-                'fft_amp': np.abs(yf)/len(self.signal),
+                'fft_amp': np.abs(yf)/len(self.signal),  # should it be divided by [mask_to_analyze] here?
+                'fft_amp_unnormalized': np.abs(yf),
                 'fft_complex': yf/len(self.signal),
                 'significant_peaks': {
                     '50Hz': {
