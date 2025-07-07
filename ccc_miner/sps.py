@@ -609,7 +609,7 @@ class WS(SPS):
                 figname = 'BWS {}'.format(plane)
 
 
-            figure, ax = plt.subplots(1, 1, figsize=(8, 6), constrained_layout=True)
+            figure, ax = plt.subplots(1, 1, figsize=(6.3, 5.4), constrained_layout=True)
             #figure, ax = self.createSubplots(figname)  
             
             # Collect beam parameter info
@@ -795,14 +795,13 @@ class WS(SPS):
             ax.text(0.89, 0.89, plane, fontsize=35, fontweight='bold', transform=ax.transAxes)
             ax.text(0.02, 0.12, '{} profiles'.format(len(index)), fontsize=13, transform=ax.transAxes)
             ax.text(0.02, 0.92, 'UTC timestamp:\n {}'.format(self.acqTime[plane]), fontsize=10, transform=ax.transAxes)
-            ax.text(0.02, 0.8, 'Plane {} average: \n$\epsilon^n$ = {:.3f}\n+/- {:.3f} $\mu$m rad'.format(plane, 1e6 * en_bar, 1e6 * spread), fontsize=14, transform=ax.transAxes)
-            ax.text(0.78, 0.14, 'InScan {}:\nctime = {:.2f} s'.format(plane, ctime_s),
-                                                                            fontsize=11,transform=ax.transAxes)
+            ax.text(0.02, 0.76, '$\epsilon^n$ average {}:\n{:.2f} +/- {:.1f} mm mrad'.format(plane, 1e6 * en_bar, 1e6 * spread), fontsize=12, transform=ax.transAxes)
+            ax.text(0.73, 0.14, 'InScan {}:\nctime = {:.2f} s'.format(plane, ctime_s), fontsize=10,transform=ax.transAxes)
             if also_fit_Q_Gaussian:
-                ax.text(0.02, 0.49, 'q-value average: \n{:.3f} +/- {:.3f}'.format(np.nanmean(Q_values), np.nanstd(Q_values)), fontsize=13, transform=ax.transAxes)
+                ax.text(0.02, 0.59, 'q-value average: \n{:.2f} +/- {:.1f}'.format(np.nanmean(Q_values), np.nanstd(Q_values)), fontsize=13, transform=ax.transAxes)
             ax.set_xlabel('Position (mm)')
             ax.set_ylabel('Amplitude (a.u.)')
-            ax.legend(fontsize=11.5, loc='right')    
+            ax.legend(fontsize=11, loc='right')    
             
             if also_fit_Q_Gaussian:
                 return figure, n_emittances, sigmas_raw, self.acqTime[plane], ctime_s, index, Q_values
