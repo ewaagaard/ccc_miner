@@ -640,6 +640,7 @@ class WS(SPS):
                 
                 pos = pos_all[i]
                 profile_data = prof_all[i]
+                pos -= pos[np.argmax(profile_data)]  # Center the profile around the peak
                 
                 # Fit Gaussian and Q-Gaussian if desired 
                 popt = self.fit_Gaussian(pos, profile_data)
@@ -801,7 +802,7 @@ class WS(SPS):
                 ax.text(0.02, 0.49, 'q-value average: \n{:.3f} +/- {:.3f}'.format(np.nanmean(Q_values), np.nanstd(Q_values)), fontsize=13, transform=ax.transAxes)
             ax.set_xlabel('Position (mm)')
             ax.set_ylabel('Amplitude (a.u.)')
-            ax.legend(fontsize=10.2, loc='right')    
+            ax.legend(fontsize=11.5, loc='right')    
             
             if also_fit_Q_Gaussian:
                 return figure, n_emittances, sigmas_raw, self.acqTime[plane], ctime_s, index, Q_values
