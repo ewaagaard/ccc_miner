@@ -778,7 +778,7 @@ class WS(SPS):
                     popt_Q_avg = self.fit_Q_Gaussian(pos, prof_avg, p0=p0_q_avg)
 
                 ax.plot(pos, prof_avg, 'b-', label='Mean BWS data')
-                ax.set_xlim(-30, 30)
+                ax.set_xlim(-25, 25)
                 ax.plot(pos, self.Gaussian(pos, *popt_avg), 'r-', label='Gaussian fit')
                 if also_fit_Q_Gaussian:
                     ax.plot(pos, self.Q_Gaussian(pos, *popt_Q_avg), color='lime', ls='--', label='Q-Gaussian fit')
@@ -795,7 +795,7 @@ class WS(SPS):
             ax.text(0.89, 0.89, plane, fontsize=35, fontweight='bold', transform=ax.transAxes)
             ax.text(0.02, 0.12, '{} profiles'.format(len(index)), fontsize=13, transform=ax.transAxes)
             ax.text(0.02, 0.92, 'UTC timestamp:\n {}'.format(self.acqTime[plane]), fontsize=10, transform=ax.transAxes)
-            ax.text(0.02, 0.8, 'Plane {} average: \n$\epsilon^n$ = {:.3f} +/- {:.3f} $\mu$m rad'.format(plane, 1e6 * en_bar, 1e6 * spread), fontsize=14, transform=ax.transAxes)
+            ax.text(0.02, 0.8, 'Plane {} average: \n$\epsilon^n$ = {:.3f}\n+/- {:.3f} $\mu$m rad'.format(plane, 1e6 * en_bar, 1e6 * spread), fontsize=14, transform=ax.transAxes)
             ax.text(0.78, 0.14, 'InScan {}:\nctime = {:.2f} s'.format(plane, ctime_s),
                                                                             fontsize=11,transform=ax.transAxes)
             if also_fit_Q_Gaussian:
